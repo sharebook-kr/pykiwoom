@@ -15,17 +15,22 @@ class Kiwoom:
         self.tr_items = None                # tr input/output items
         self.tr_data = None                 # tr output data
         self.tr_record = None
+        self.tr_remained = False
         self._set_signals_slots()
 
     def _handler_login(self, err_code):
-        print(err_code, type(err_code))
         if err_code == 0:
             self.connected = True
 
     def _handler_tr(self, screen, rqname, trcode, record, next):
-        print("next: ", next, type(next))
         record = None
         items = None
+
+        # remained data
+        if next == '2':
+            self.tr_remained = True
+        else:
+            self.tr_remained = False
 
         for output in self.tr_items['output']:
             record = list(output.keys())[0]
@@ -34,12 +39,14 @@ class Kiwoom:
                 break
 
         rows = self.GetRepeatCnt(trcode, rqname)
+        if rows == 0:
+            rows = 1
 
         data_list = []
         for row in range(rows):
             row_data = []
             for item in items:
-                data = self.GetCommData(trcode, rqname, 0, item)
+                data = self.GetCommData(trcode, rqname, row, item)
                 row_data.append(data)
             data_list.append(row_data)
 
@@ -133,16 +140,19 @@ class Kiwoom:
         lines = parser.read_enc(trcode)
         self.tr_items = parser.parse_dat(trcode, lines)
         self.tr_record = kwargs["output"]
-        print(self.tr_record)
+        next = kwargs["next"]
 
         # set input
         for id in kwargs:
-            if id.lower() is not "output":
+            if id.lower() is not "output" and id.lower() is not "next":
                 self.SetInputValue(id, kwargs[id])
 
-        # request
+        # initialize
         self.received = False
-        self.CommRqData(trcode, trcode, "0", "0101")
+        self.tr_remained = False
+
+        # request
+        self.CommRqData(trcode, trcode, next, "0101")
         while not self.received:
             pythoncom.PumpWaitingMessages()
 
@@ -154,6 +164,7 @@ if not QApplication.instance():
 
 
 if __name__ == "__main__":
+    import time
     # 로그인
     kiwoom = Kiwoom()
     kiwoom.CommConnect(block=True)
@@ -163,5 +174,17 @@ if __name__ == "__main__":
                               종목코드="005930",
                               기준일자="20200424",
                               수정주가구분=1,
-                              output="주식일봉차트조회")
+                              output="주식일봉차트조회",
+                              next=0)
     print(df)
+
+    while kiwoom.tr_remained:
+        df = kiwoom.block_request("opt10081",
+                                  종목코드="005930",
+                                  기준일자="20200424",
+                                  수정주가구분=1,
+                                  output="주식일봉차트조회",
+                                  next=2)
+        print(df)
+        time.sleep(1)
+
