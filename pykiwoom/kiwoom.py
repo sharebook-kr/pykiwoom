@@ -16,11 +16,21 @@ class Kiwoom:
         self.tr_data = None                 # tr output data
         self.tr_record = None
         self.tr_remained = False
+        self.condition_loaded = False
         self._set_signals_slots()
 
     def _handler_login(self, err_code):
         if err_code == 0:
             self.connected = True
+
+    def _handler_condition_load(self, ret, msg):
+        if ret == 1:
+            self.condition_loaded = True
+
+    def _handler_tr_condition(self, screen_no, code_list, cond_name, cond_index, next):
+        codes = code_list.split(';')[:-1]
+        self.tr_condition_data = codes
+        self.tr_condition_loaded= True
 
     def _handler_tr(self, screen, rqname, trcode, record, next):
         record = None
@@ -58,11 +68,20 @@ class Kiwoom:
     def _set_signals_slots(self):
         self.ocx.OnEventConnect.connect(self._handler_login)
         self.ocx.OnReceiveTrData.connect(self._handler_tr)
+        self.ocx.OnReceiveConditionVer.connect(self._handler_condition_load)
+        self.ocx.OnReceiveTrCondition.connect(self._handler_tr_condition)
 
     def CommConnect(self, block=True):
         self.ocx.dynamicCall("CommConnect()")
         if block:
             while not self.connected:
+                pythoncom.PumpWaitingMessages()
+
+    def GetConditionLoad(self, block=True):
+        self.condition_loaded = False
+        self.ocx.dynamicCall("GetConditionLoad()")
+        if block:
+            while not self.condition_loaded:
                 pythoncom.PumpWaitingMessages()
 
     def GetLoginInfo(self, tag):
@@ -158,6 +177,26 @@ class Kiwoom:
 
         return self.tr_data
 
+    def GetConditionNameList(self):
+        data = self.ocx.dynamicCall("GetConditionNameList()")
+        conditions = data.split(";")[:-1]
+
+        cond_dict = {}
+        for condition in conditions:
+            cond_index, cond_name = condition.split('^')
+            cond_dict[cond_index] = cond_name
+
+        return cond_dict
+
+    def SendCondition(self, screen, cond_name, cond_index, search):
+        self.tr_condition_loaded = False
+        self.ocx.dynamicCall("SendCondition(QString, QString, int, int)", screen, cond_name, cond_index, search)
+
+        while not self.tr_condition_loaded:
+            pythoncom.PumpWaitingMessages()
+
+        return self.tr_condition_data
+
 
 if not QApplication.instance():
     app = QApplication(sys.argv)
@@ -169,22 +208,9 @@ if __name__ == "__main__":
     kiwoom = Kiwoom()
     kiwoom.CommConnect(block=True)
 
-    # TR 요청
-    df = kiwoom.block_request("opt10081",
-                              종목코드="005930",
-                              기준일자="20200424",
-                              수정주가구분=1,
-                              output="주식일봉차트조회",
-                              next=0)
-    print(df)
+    # 조건식 load
+    kiwoom.GetConditionLoad()
 
-    while kiwoom.tr_remained:
-        df = kiwoom.block_request("opt10081",
-                                  종목코드="005930",
-                                  기준일자="20200424",
-                                  수정주가구분=1,
-                                  output="주식일봉차트조회",
-                                  next=2)
-        print(df)
-        time.sleep(1)
-
+    print(kiwoom.GetConditionNameList())
+    codes = kiwoom.SendCondition("0101", "perpbr", "000", 0)
+    print(codes)
