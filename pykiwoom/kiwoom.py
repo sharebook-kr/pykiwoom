@@ -181,12 +181,13 @@ class Kiwoom:
         data = self.ocx.dynamicCall("GetConditionNameList()")
         conditions = data.split(";")[:-1]
 
-        cond_dict = {}
+        # [('000', 'perpbr'), ('001', 'macd'), ...]
+        result = []
         for condition in conditions:
             cond_index, cond_name = condition.split('^')
-            cond_dict[cond_index] = cond_name
+            result.append((cond_index, cond_name))
 
-        return cond_dict
+        return result
 
     def SendCondition(self, screen, cond_name, cond_index, search):
         self.tr_condition_loaded = False
@@ -203,7 +204,6 @@ if not QApplication.instance():
 
 
 if __name__ == "__main__":
-    import time
     # 로그인
     kiwoom = Kiwoom()
     kiwoom.CommConnect(block=True)
@@ -211,6 +211,11 @@ if __name__ == "__main__":
     # 조건식 load
     kiwoom.GetConditionLoad()
 
-    print(kiwoom.GetConditionNameList())
-    codes = kiwoom.SendCondition("0101", "perpbr", "000", 0)
+    conditions = kiwoom.GetConditionNameList()
+
+    # 0번 조건식에 해당하는 종목 리스트 출력
+    condition_index = conditions[0][0]
+    condition_name = conditions[0][1]
+    codes = kiwoom.SendCondition("0101", condition_name, condition_index, 0)
+
     print(codes)
