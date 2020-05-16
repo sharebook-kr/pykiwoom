@@ -131,4 +131,5 @@ dmypy.json
 account.txt
 .idea/
 example/*.xlsx
+example_tr/*.xlsx
 pyxing/*.xlsx
