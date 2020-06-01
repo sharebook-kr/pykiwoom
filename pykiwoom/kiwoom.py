@@ -5,6 +5,7 @@ import pythoncom
 import datetime
 from pykiwoom import parser
 import pandas as pd
+import time
 
 
 class Kiwoom:
@@ -103,7 +104,11 @@ class Kiwoom:
         :return: tag에 대한 데이터 값
         """
         data = self.ocx.dynamicCall("GetLoginInfo(QString)", tag)
-        return data
+
+        if tag == "ACCNO":
+            return data.split(';')[:-1]
+        else:
+            return data
 
     def SendOrder(self, rqname, screen, accno, order_type, code, quantity, price, hoga, order_no):
         """
@@ -362,6 +367,12 @@ class Kiwoom:
     def GetCommDataEx(self, trcode, rqname):
         data = self.ocx.dynamicCall("GetCommDataEx(QString, QString)", trcode, rqname)
         return data
+
+    def SendOrder(self, rqname, screen, accno, order_type, code, quantity, price, hoga, order_no):
+        self.ocx.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
+                             [rqname, screen, accno, order_type, code, quantity, price, hoga, order_no])
+        # 주문 후 0.2초 대기
+        time.sleep(0.2)
 
 
 if not QApplication.instance():
