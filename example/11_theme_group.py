@@ -4,6 +4,6 @@ import pprint
 kiwoom = Kiwoom()
 kiwoom.CommConnect(block=True)
 
-group = kiwoom.GetThemeGroupList(1)
+group = kiwoom.GetThemeGroupList(type=1)
 pprint.pprint(group)
 

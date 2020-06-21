@@ -283,10 +283,13 @@ class Kiwoom:
         data = self.ocx.dynamicCall("GetChejanData(int)", fid)
         return data
 
-    def GetThemeGroupList(self, type):
+    def GetThemeGroupList(self, type=1):
         data = self.ocx.dynamicCall("GetThemeGroupList(int)", type)
         tokens = data.split(';')
-        grp = {x.split('|')[1]:x.split('|')[0] for x in tokens}
+        if type == 0:
+            grp = {x.split('|')[0]:x.split('|')[1] for x in tokens}
+        else:
+            grp = {x.split('|')[1]: x.split('|')[0] for x in tokens}
         return grp
 
     def GetThemeGroupCode(self, theme_code):
