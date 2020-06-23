@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name            = 'pykiwoom',
-    version         = '0.0.4',
+    version         = '0.0.5',
     description     = 'python wrapper for Kiwoom Open API+ (Korea Stock Market)',
     url             = 'https://github.com/sharebook-kr/pykiwoom',
     author          = 'Lukas Yoo, Brayden Jo',
