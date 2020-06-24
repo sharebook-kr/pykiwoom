@@ -6,10 +6,13 @@ import datetime
 from pykiwoom import parser
 import pandas as pd
 import time
+import logging
+
+logging.basicConfig(filename="log.txt", level=logging.ERROR)
 
 
 class Kiwoom:
-    def __init__(self):
+    def __init__(self, login=False):
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
         self.connected = False              # for login event
         self.received = False               # for tr event
@@ -20,7 +23,11 @@ class Kiwoom:
         self.condition_loaded = False
         self._set_signals_slots()
 
+        if login:
+            self.CommConnect()
+
     def _handler_login(self, err_code):
+        logging.info(f"hander login {err_code}")
         if err_code == 0:
             self.connected = True
 
@@ -34,43 +41,55 @@ class Kiwoom:
         self.tr_condition_loaded= True
 
     def _handler_tr(self, screen, rqname, trcode, record, next):
-        record = None
-        items = None
+        logging.info(f"OnReceiveTrData {screen} {rqname} {trcode} {record} {next}")
+        try:
+            record = None
+            items = None
 
-        # remained data
-        if next == '2':
-            self.tr_remained = True
-        else:
-            self.tr_remained = False
+            # remained data
+            if next == '2':
+                self.tr_remained = True
+            else:
+                self.tr_remained = False
 
-        for output in self.tr_items['output']:
-            record = list(output.keys())[0]
-            items = list(output.values())[0]
-            if record == self.tr_record:
-                break
+            for output in self.tr_items['output']:
+                record = list(output.keys())[0]
+                items = list(output.values())[0]
+                if record == self.tr_record:
+                    break
 
-        rows = self.GetRepeatCnt(trcode, rqname)
-        if rows == 0:
-            rows = 1
+            rows = self.GetRepeatCnt(trcode, rqname)
+            if rows == 0:
+                rows = 1
 
-        data_list = []
-        for row in range(rows):
-            row_data = []
-            for item in items:
-                data = self.GetCommData(trcode, rqname, row, item)
-                row_data.append(data)
-            data_list.append(row_data)
+            data_list = []
+            for row in range(rows):
+                row_data = []
+                for item in items:
+                    data = self.GetCommData(trcode, rqname, row, item)
+                    row_data.append(data)
+                data_list.append(row_data)
 
-        # data to DataFrame
-        df = pd.DataFrame(data=data_list, columns=items)
-        self.tr_data = df
-        self.received = True
+            # data to DataFrame
+            df = pd.DataFrame(data=data_list, columns=items)
+            self.tr_data = df
+            self.received = True
+        except:
+            pass
+
+    def _handler_msg(self, screen, rqname, trcode, msg):
+        logging.info(f"OnReceiveMsg {screen} {rqname} {trcode} {msg}")
+
+    def _handler_chejan(self, gubun, item_cnt, fid_list):
+        logging.info(f"OnReceiveChejanData {gubun} {item_cnt} {fid_list}")
 
     def _set_signals_slots(self):
         self.ocx.OnEventConnect.connect(self._handler_login)
         self.ocx.OnReceiveTrData.connect(self._handler_tr)
         self.ocx.OnReceiveConditionVer.connect(self._handler_condition_load)
         self.ocx.OnReceiveTrCondition.connect(self._handler_tr_condition)
+        self.ocx.OnReceiveMsg.connect(self._handler_msg)
+        self.ocx.OnReceiveChejanData.connect(self._handler_chejan)
 
     #-------------------------------------------------------------------------------------------------------------------
     # OpenAPI+ 메서드
