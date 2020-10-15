@@ -333,7 +333,7 @@ class Kiwoom:
 
         # set input
         for id in kwargs:
-            if id.lower() is not "output" and id.lower() is not "next":
+            if id.lower() != "output" and id.lower() != "next":
                 self.SetInputValue(id, kwargs[id])
 
         # initialize
