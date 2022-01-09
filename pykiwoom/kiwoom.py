@@ -28,17 +28,20 @@ class Kiwoom:
         self.tr_remained = False
         self.condition_loaded = False
         self._set_signals_slots()
+        self.queue = None
+        self.tr_item_queue = mp.Queue()
+        self.proc = proc
 
         if login:
             self.CommConnect()
 
-        if proc:
+        if self.proc:
             self.queue = queue 
 
             # method thread
             self.method_thread = threading.Thread(
                 target=MethodManager, 
-                args=(self.ocx, self.queue["method_cqueue"], self.queue["method_dqueue"]), 
+                args=(self, self.ocx, self.queue["method_cqueue"], self.queue["method_dqueue"]), 
                 daemon=True
             )
             self.method_thread.start()
@@ -46,7 +49,7 @@ class Kiwoom:
             # transaction thread
             self.transaction_thread = threading.Thread(
                 target=TransactionManager, 
-                args=(self.ocx, self.queue["tr_cqueue"], self.queue["tr_dqueue"]), 
+                args=(self, self.ocx, self.queue["tr_cqueue"], self.queue["tr_dqueue"]), 
                 daemon=True
             )
             self.transaction_thread.start()
@@ -54,7 +57,7 @@ class Kiwoom:
             # order thread
             self.order_thread = threading.Thread(
                 target=OrderManager, 
-                args=(self.ocx, self.queue["order_cqueue"], None), 
+                args=(self, self.ocx, self.queue["order_cqueue"], None), 
                 daemon=True
             )
             self.order_thread.start()
@@ -64,6 +67,7 @@ class Kiwoom:
 
     def _handler_login(self, err_code):
         logging.info(f"hander login {err_code}")
+        print("login 완료")
         if err_code == 0:
             self.connected = True
 
@@ -76,7 +80,33 @@ class Kiwoom:
         self.tr_condition_data = codes
         self.tr_condition_loaded= True
 
+    def get_data(self, trcode, rqname, items):
+        rows = self.GetRepeatCnt(trcode, rqname)
+        if rows == 0:
+            rows = 1
+
+        data_list = []
+        for row in range(rows):
+            row_data = []
+            for item in items:
+                data = self.GetCommData(trcode, rqname, row, item)
+                row_data.append(data)
+            data_list.append(row_data)
+
+        # data to DataFrame
+        df = pd.DataFrame(data=data_list, columns=items)
+        return df
+
     def _handler_tr(self, screen, rqname, trcode, record, next):
+        print(screen, rqname, trcode, record, next)
+
+        # mp process
+        if self.proc is not None:
+            items = self.tr_item_queue.get()
+            data = self.get_data(trcode, rqname, items)
+            tr_dqueue = self.queue['tr_dqueue']
+            tr_dqueue.put(data)
+
         logging.info(f"OnReceiveTrData {screen} {rqname} {trcode} {record} {next}")
         try:
             record = None
@@ -110,6 +140,7 @@ class Kiwoom:
             df = pd.DataFrame(data=data_list, columns=items)
             self.tr_data = df
             self.received = True
+
         except:
             pass
 
@@ -142,6 +173,7 @@ class Kiwoom:
                 pythoncom.PumpWaitingMessages()
 
     def CommRqData(self, rqname, trcode, next, screen):
+        print("CommRqData", rqname, trcode, next, screen)
         """
         TR을 서버로 송신합니다.
         :param rqname: 사용자가 임의로 지정할 수 있는 요청 이름
@@ -356,10 +388,6 @@ class Kiwoom:
         data = self.ocx.dynamicCall("GetFutureList()")
         return data
 
-    def GetCommDataEx(self, trcode, record):
-        data = self.ocx.dynamicCall("GetCommDataEx(QString, QString)", trcode, record)
-        return data
-
     def block_request(self, *args, **kwargs):
         trcode = args[0].lower()
         lines = parser.read_enc(trcode)
@@ -450,18 +478,24 @@ class KiwoomProxy:
         )
         self.sub_proc.start()
 
-    def fetch(self, **kwargs):
-        func = kwargs['func']
-        if func.startswith("op"):
-            pass 
-        elif func == 'SendOrder':
-            self.order_cqueue.put("dummy")
-        else:
-            cmd_list = [func] + kwargs['params']
-            self.method_cqueue.put(cmd_list)
-            data = self.method_dqueue.get()
-            return data
 
+    # Kiwoom OpenAPI Method
+    def call(self, **kwargs):
+        func = kwargs['func']
+        cmd_list = [func] + kwargs['params']
+        self.method_cqueue.put(cmd_list)
+        data = self.method_dqueue.get()
+        return data
+
+    # Transaction
+    def request(self, **kwargs):
+        self.tr_cqueue.put(kwargs)
+
+    # Order
+    def order(self, **kwargs):
+        self.order_cqueue.put("dummy")
+
+    # Real
     def subscribe(self, **kwargs):
         pass
 
