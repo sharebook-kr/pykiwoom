@@ -9,82 +9,9 @@ import pandas as pd
 import time
 import logging
 import multiprocessing as mp
+from .manager import *
 
 logging.basicConfig(filename="log.txt", level=logging.ERROR)
-
-METHOD_LOOKUP = {
-    "CommConnect": "CommConnect()",
-    "CommRqData": "CommRqData(QString, QString, int, QString)",
-    "GetLoginInfo": "GetLoginInfo(QString)",
-    "SendOrder": "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-    "SetInputValue": "SetInputValue(QString, QString)",
-    "DisconnectRealData": "DisconnectRealData(QString)",
-    "GetRepeatCnt": "GetRepeatCnt(QString, QString)",
-    "CommKwRqData": "CommKwRqData(QString, bool, int, int, QString, QString)",
-    "GetAPIModulePath": "GetAPIModulePath()",
-    "GetCodeListByMarket": "GetCodeListByMarket(QString)",
-    "GetConnectState": "GetConnectState()",
-    "GetMasterCodeName": "GetMasterCodeName(QString)",
-    "GetMasterListedStockCnt": "GetMasterListedStockCnt(QString)",
-    "GetMasterConstruction": "GetMasterConstruction(QString)",
-    "GetMasterListedStockDate": "GetMasterListedStockDate(QString)",
-    "GetMasterLastPrice": "GetMasterLastPrice(QString)",
-    "GetMasterStockState": "GetMasterStockState(QString)",
-    "GetDataCount": "GetDataCount(QString)",
-    "GetOutputValue": "GetOutputValue(QString, int, int)",
-    "GetCommData": "GetCommData(QString, QString, int, QString)",
-    "GetCommRealData": "GetCommRealData(QString, int)",
-    "GetChejanData": "GetChejanData(int)",
-    "GetThemeGroupList": "GetThemeGroupList(int)",
-    "GetThemeGroupCode": "GetThemeGroupCode(QString)",
-    "GetFutureList": "GetFutureList()",
-    "GetCommDataEx": "GetCommDataEx(QString, QString)",
-    "SetRealReg": "SetRealReg(QString, QString, QString, QString)",
-    "SetRealRemove": "SetRealRemove(QString, QString)",
-    "GetConditionLoad": "GetConditionLoad()",
-    "GetConditionNameList": "GetConditionNameList()",
-    "SendCondition": "SendCondition(QString, QString, int, int)",
-    "SendConditionStop": "SendConditionStop(QString, QString, int)",
-    "GetCommDataEx": "GetCommDataEx(QString, QString)",
-    "SendOrder": "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)"
-}
-
-
-class BaseManager:
-    def __init__(self, ocx, cqueue, dqueue) -> None:
-        self.ocx = ocx
-        self.cqueue = cqueue 
-        self.dqueue = dqueue
-        self.run()
-
-    def run(self):
-        pass
-
-
-class MethodManager(BaseManager):
-    def __init__(self, ocx, cqueue, dqueue) -> None:
-        super().__init__(ocx, cqueue, dqueue)
-
-    def run(self):
-        while True: 
-            cmd, *params = self.cqueue.get()     # ["GetRepeatCnt", "opt1001", "req"]
-            func = METHOD_LOOKUP[cmd]
-            data = self.ocx.dynamicCall(func, params)
-
-            if cmd == "GetCodeListByMarket":
-                data = data.split(';')[:-1]
-
-            self.dqueue.put(data)
-
-
-class TransactionManager(BaseManager):
-    def __init__(self, ocx, cqueue, dqueue) -> None:
-        super().__init__(ocx, cqueue, dqueue)
-
-    def run(self):
-        while True: 
-            self.cqueue.get()
-            self.dqueue.put(data)
 
 
 class Kiwoom:
@@ -108,15 +35,29 @@ class Kiwoom:
         if proc:
             self.queue = queue 
 
-            # method thread and queue
-            method_cqueue = queue['method_cqueue']
-            method_dqueue = queue['method_dqueue']
+            # method thread
             self.method_thread = threading.Thread(
                 target=MethodManager, 
-                args=(self.ocx, method_cqueue, method_dqueue), 
+                args=(self.ocx, self.queue["method_cqueue"], self.queue["method_dqueue"]), 
                 daemon=True
             )
             self.method_thread.start()
+
+            # transaction thread
+            self.transaction_thread = threading.Thread(
+                target=TransactionManager, 
+                args=(self.ocx, self.queue["tr_cqueue"], self.queue["tr_dqueue"]), 
+                daemon=True
+            )
+            self.transaction_thread.start()
+
+            # order thread
+            self.order_thread = threading.Thread(
+                target=OrderManager, 
+                args=(self.ocx, self.queue["order_cqueue"], None), 
+                daemon=True
+            )
+            self.order_thread.start()
 
             app.exec_()
 
@@ -485,12 +426,6 @@ class Kiwoom:
         data = self.ocx.dynamicCall("GetCommDataEx(QString, QString)", trcode, rqname)
         return data
 
-    def SendOrder(self, rqname, screen, accno, order_type, code, quantity, price, hoga, order_no):
-        self.ocx.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
-                             [rqname, screen, accno, order_type, code, quantity, price, hoga, order_no])
-        # 주문 후 0.2초 대기
-        time.sleep(0.2)
-
 
 class KiwoomProxy:
     def __init__(self) -> None:
@@ -498,12 +433,14 @@ class KiwoomProxy:
         self.method_dqueue = mp.Queue()
         self.tr_cqueue = mp.Queue()
         self.tr_dqueue = mp.Queue()
+        self.order_cqueue = mp.Queue()
 
         queue = {
             'method_cqueue': self.method_cqueue,
             'method_dqueue': self.method_dqueue,
             'tr_cqueue': self.tr_cqueue,
-            'tr_dqueue': self.tr_dqueue
+            'tr_dqueue': self.tr_dqueue,
+            'order_cqueue': self.order_cqueue
         }
 
         # subprocess 
@@ -517,6 +454,8 @@ class KiwoomProxy:
         func = kwargs['func']
         if func.startswith("op"):
             pass 
+        elif func == 'SendOrder':
+            self.order_cqueue.put("dummy")
         else:
             cmd_list = [func] + kwargs['params']
             self.method_cqueue.put(cmd_list)
