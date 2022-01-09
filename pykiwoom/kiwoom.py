@@ -1,4 +1,5 @@
 import sys
+import threading
 from PyQt5.QtWidgets import *
 from PyQt5.QAxContainer import *
 import pythoncom
@@ -7,12 +8,90 @@ from pykiwoom import parser
 import pandas as pd
 import time
 import logging
+import multiprocessing as mp
 
 logging.basicConfig(filename="log.txt", level=logging.ERROR)
 
+METHOD_LOOKUP = {
+    "CommConnect": "CommConnect()",
+    "CommRqData": "CommRqData(QString, QString, int, QString)",
+    "GetLoginInfo": "GetLoginInfo(QString)",
+    "SendOrder": "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)",
+    "SetInputValue": "SetInputValue(QString, QString)",
+    "DisconnectRealData": "DisconnectRealData(QString)",
+    "GetRepeatCnt": "GetRepeatCnt(QString, QString)",
+    "CommKwRqData": "CommKwRqData(QString, bool, int, int, QString, QString)",
+    "GetAPIModulePath": "GetAPIModulePath()",
+    "GetCodeListByMarket": "GetCodeListByMarket(QString)",
+    "GetConnectState": "GetConnectState()",
+    "GetMasterCodeName": "GetMasterCodeName(QString)",
+    "GetMasterListedStockCnt": "GetMasterListedStockCnt(QString)",
+    "GetMasterConstruction": "GetMasterConstruction(QString)",
+    "GetMasterListedStockDate": "GetMasterListedStockDate(QString)",
+    "GetMasterLastPrice": "GetMasterLastPrice(QString)",
+    "GetMasterStockState": "GetMasterStockState(QString)",
+    "GetDataCount": "GetDataCount(QString)",
+    "GetOutputValue": "GetOutputValue(QString, int, int)",
+    "GetCommData": "GetCommData(QString, QString, int, QString)",
+    "GetCommRealData": "GetCommRealData(QString, int)",
+    "GetChejanData": "GetChejanData(int)",
+    "GetThemeGroupList": "GetThemeGroupList(int)",
+    "GetThemeGroupCode": "GetThemeGroupCode(QString)",
+    "GetFutureList": "GetFutureList()",
+    "GetCommDataEx": "GetCommDataEx(QString, QString)",
+    "SetRealReg": "SetRealReg(QString, QString, QString, QString)",
+    "SetRealRemove": "SetRealRemove(QString, QString)",
+    "GetConditionLoad": "GetConditionLoad()",
+    "GetConditionNameList": "GetConditionNameList()",
+    "SendCondition": "SendCondition(QString, QString, int, int)",
+    "SendConditionStop": "SendConditionStop(QString, QString, int)",
+    "GetCommDataEx": "GetCommDataEx(QString, QString)",
+    "SendOrder": "SendOrder(QString, QString, QString, int, QString, int, int, QString, QString)"
+}
+
+
+class BaseManager:
+    def __init__(self, ocx, cqueue, dqueue) -> None:
+        self.ocx = ocx
+        self.cqueue = cqueue 
+        self.dqueue = dqueue
+        self.run()
+
+    def run(self):
+        pass
+
+
+class MethodManager(BaseManager):
+    def __init__(self, ocx, cqueue, dqueue) -> None:
+        super().__init__(ocx, cqueue, dqueue)
+
+    def run(self):
+        while True: 
+            cmd, *params = self.cqueue.get()     # ["GetRepeatCnt", "opt1001", "req"]
+            func = METHOD_LOOKUP[cmd]
+            data = self.ocx.dynamicCall(func, params)
+
+            if cmd == "GetCodeListByMarket":
+                data = data.split(';')[:-1]
+
+            self.dqueue.put(data)
+
+
+class TransactionManager(BaseManager):
+    def __init__(self, ocx, cqueue, dqueue) -> None:
+        super().__init__(ocx, cqueue, dqueue)
+
+    def run(self):
+        while True: 
+            self.cqueue.get()
+            self.dqueue.put(data)
+
 
 class Kiwoom:
-    def __init__(self, login=False):
+    def __init__(self, login=False, proc=False, queue=None):
+        if proc: 
+            app = QApplication(sys.argv)
+
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
         self.connected = False              # for login event
         self.received = False               # for tr event
@@ -25,6 +104,22 @@ class Kiwoom:
 
         if login:
             self.CommConnect()
+
+        if proc:
+            self.queue = queue 
+
+            # method thread and queue
+            method_cqueue = queue['method_cqueue']
+            method_dqueue = queue['method_dqueue']
+            self.method_thread = threading.Thread(
+                target=MethodManager, 
+                args=(self.ocx, method_cqueue, method_dqueue), 
+                daemon=True
+            )
+            self.method_thread.start()
+
+            app.exec_()
+
 
     def _handler_login(self, err_code):
         logging.info(f"hander login {err_code}")
@@ -397,23 +492,62 @@ class Kiwoom:
         time.sleep(0.2)
 
 
+class KiwoomProxy:
+    def __init__(self) -> None:
+        self.method_cqueue = mp.Queue()
+        self.method_dqueue = mp.Queue()
+        self.tr_cqueue = mp.Queue()
+        self.tr_dqueue = mp.Queue()
+
+        queue = {
+            'method_cqueue': self.method_cqueue,
+            'method_dqueue': self.method_dqueue,
+            'tr_cqueue': self.tr_cqueue,
+            'tr_dqueue': self.tr_dqueue
+        }
+
+        # subprocess 
+        self.sub_proc = mp.Process(
+            target=Kiwoom, 
+            args=(True, True, queue)
+        )
+        self.sub_proc.start()
+
+    def fetch(self, **kwargs):
+        func = kwargs['func']
+        if func.startswith("op"):
+            pass 
+        else:
+            cmd_list = [func] + kwargs['params']
+            self.method_cqueue.put(cmd_list)
+            data = self.method_dqueue.get()
+            return data
+
+    def subscribe(self, **kwargs):
+        pass
+
+
 if not QApplication.instance():
     app = QApplication(sys.argv)
 
 
 if __name__ == "__main__":
-    # 로그인
-    kiwoom = Kiwoom()
-    kiwoom.CommConnect(block=True)
+    proxy = KiwoomProxy()
+    data = proxy.fetch(func="GetMasterCodeName", params=["005930"])
+    print(data)
 
-    # 조건식 load
-    kiwoom.GetConditionLoad()
+    ## 로그인
+    #kiwoom = Kiwoom()
+    #kiwoom.CommConnect(block=True)
 
-    conditions = kiwoom.GetConditionNameList()
+    ## 조건식 load
+    #kiwoom.GetConditionLoad()
 
-    # 0번 조건식에 해당하는 종목 리스트 출력
-    condition_index = conditions[0][0]
-    condition_name = conditions[0][1]
-    codes = kiwoom.SendCondition("0101", condition_name, condition_index, 0)
+    #conditions = kiwoom.GetConditionNameList()
 
-    print(codes)
+    ## 0번 조건식에 해당하는 종목 리스트 출력
+    #condition_index = conditions[0][0]
+    #condition_name = conditions[0][1]
+    #codes = kiwoom.SendCondition("0101", condition_name, condition_index, 0)
+
+    #print(codes)
