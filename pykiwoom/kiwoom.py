@@ -463,7 +463,7 @@ class KiwoomProxy:
         self.tr_dqueue = mp.Queue()
         self.order_cqueue = mp.Queue()
 
-        queue = {
+        self.queue = {
             'method_cqueue': self.method_cqueue,
             'method_dqueue': self.method_dqueue,
             'tr_cqueue': self.tr_cqueue,
@@ -474,7 +474,7 @@ class KiwoomProxy:
         # subprocess 
         self.sub_proc = mp.Process(
             target=Kiwoom, 
-            args=(True, True, queue)
+            args=(True, True, self.queue)
         )
         self.sub_proc.start()
 

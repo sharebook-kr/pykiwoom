@@ -8,7 +8,7 @@ if __name__ == "__main__":
         input={
             "종목코드": "005930"
         },
-        output=['종목코드', '종목명'],
+        output=['종목코드', '종목명', 'PER', 'PBR'],
         next=0, 
         screen="1000"
     )
