@@ -1,25 +1,22 @@
 import sys
-import threading
 from PyQt5.QtWidgets import *
 from PyQt5.QAxContainer import *
 import pythoncom
 import datetime
 from pykiwoom import parser
 import pandas as pd
-import time
 import logging
 import multiprocessing as mp
-from .manager import *
 
 logging.basicConfig(filename="log.txt", level=logging.ERROR)
 
 
 class Kiwoom:
-    def __init__(self, login=False, proc=False, queue=None):
-        if proc: 
-            app = QApplication(sys.argv)
-
+    def __init__(self, login=False, tr_dqueue=None):
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
+
+        self.tr_dqueue = tr_dqueue
+
         self.connected = False              # for login event
         self.received = False               # for tr event
         self.tr_items = None                # tr input/output items
@@ -28,42 +25,9 @@ class Kiwoom:
         self.tr_remained = False
         self.condition_loaded = False
         self._set_signals_slots()
-        self.queue = None
-        self.tr_item_queue = mp.Queue()
-        self.proc = proc
 
         if login:
             self.CommConnect()
-
-        if self.proc:
-            self.queue = queue 
-
-            # method thread
-            self.method_thread = threading.Thread(
-                target=MethodManager, 
-                args=(self, self.ocx, self.queue["method_cqueue"], self.queue["method_dqueue"]), 
-                daemon=True
-            )
-            self.method_thread.start()
-
-            # transaction thread
-            self.transaction_thread = threading.Thread(
-                target=TransactionManager, 
-                args=(self, self.ocx, self.queue["tr_cqueue"], self.queue["tr_dqueue"]), 
-                daemon=True
-            )
-            self.transaction_thread.start()
-
-            # order thread
-            self.order_thread = threading.Thread(
-                target=OrderManager, 
-                args=(self, self.ocx, self.queue["order_cqueue"], None), 
-                daemon=True
-            )
-            self.order_thread.start()
-
-            app.exec_()
-
 
     def _handler_login(self, err_code):
         logging.info(f"hander login {err_code}")
@@ -98,14 +62,12 @@ class Kiwoom:
         return df
 
     def _handler_tr(self, screen, rqname, trcode, record, next):
-        print(screen, rqname, trcode, record, next)
+        #print(screen, rqname, trcode, record, next)
 
-        # mp process
-        if self.proc is not None:
-            items = self.tr_item_queue.get()
+        if self.tr_dqueue is not None:
+            items = self.tr_output_items
             data = self.get_data(trcode, rqname, items)
-            tr_dqueue = self.queue['tr_dqueue']
-            tr_dqueue.put(data)
+            self.tr_dqueue.put(data)
 
         logging.info(f"OnReceiveTrData {screen} {rqname} {trcode} {record} {next}")
         try:
@@ -456,48 +418,45 @@ class Kiwoom:
 
 
 class KiwoomProxy:
-    def __init__(self) -> None:
-        self.method_cqueue = mp.Queue()
-        self.method_dqueue = mp.Queue()
-        self.tr_cqueue = mp.Queue()
-        self.tr_dqueue = mp.Queue()
-        self.order_cqueue = mp.Queue()
+    app = QApplication(sys.argv)
 
-        self.queue = {
-            'method_cqueue': self.method_cqueue,
-            'method_dqueue': self.method_dqueue,
-            'tr_cqueue': self.tr_cqueue,
-            'tr_dqueue': self.tr_dqueue,
-            'order_cqueue': self.order_cqueue
-        }
+    def __init__(self, method_cqueue, method_dqueue, tr_cqueue, tr_dqueue, order_cqueue):
+        self.method_cqueue = method_cqueue 
+        self.method_dqueue = method_dqueue 
+        self.tr_cqueue = tr_cqueue 
+        self.order_cqueue = order_cqueue 
 
-        # subprocess 
-        self.sub_proc = mp.Process(
-            target=Kiwoom, 
-            args=(True, True, self.queue)
-        )
-        self.sub_proc.start()
+        self.kiwoom = Kiwoom(tr_dqueue=tr_dqueue)
+        self.kiwoom.CommConnect()
+        self.run()
 
+    def run(self):
+        while True: 
+            if not self.method_cqueue.empty():
+                func_name, *params = self.method_cqueue.get()
 
-    # Kiwoom OpenAPI Method
-    def call(self, **kwargs):
-        func = kwargs['func']
-        cmd_list = [func] + kwargs['params']
-        self.method_cqueue.put(cmd_list)
-        data = self.method_dqueue.get()
-        return data
+                if hasattr(self.kiwoom, func_name):
+                    func = getattr(self.kiwoom, func_name)
+                    result = func(*params)
+                    self.method_dqueue.put(result)
 
-    # Transaction
-    def request(self, **kwargs):
-        self.tr_cqueue.put(kwargs)
+            if not self.tr_cqueue.empty():
+                tr_cmd = self.tr_cqueue.get()
+                rqname = tr_cmd['rqname']
+                trcode = tr_cmd['trcode']
+                next   = tr_cmd['next']
+                screen = tr_cmd['screen']
+                input  = tr_cmd['input']
+                output = tr_cmd['output']
 
-    # Order
-    def order(self, **kwargs):
-        self.order_cqueue.put("dummy")
+                for id, value in input.items():
+                    self.kiwoom.SetInputValue(id, value)
 
-    # Real
-    def subscribe(self, **kwargs):
-        pass
+                self.kiwoom.tr_output_items = output
+                self.kiwoom.CommRqData(rqname, trcode, next, screen)
+
+            pythoncom.PumpWaitingMessages()
+
 
 
 if not QApplication.instance():
@@ -505,9 +464,45 @@ if not QApplication.instance():
 
 
 if __name__ == "__main__":
-    proxy = KiwoomProxy()
-    data = proxy.fetch(func="GetMasterCodeName", params=["005930"])
+    # SubProcess
+    method_cqueue = mp.Queue()
+    method_dqueue = mp.Queue()
+    tr_cqueue = mp.Queue()
+    tr_dqueue = mp.Queue()
+    order_cqueue = mp.Queue()
+
+    proxy = mp.Process(
+        target=KiwoomProxy, 
+        args=(
+            method_cqueue, 
+            method_dqueue,
+            tr_cqueue, 
+            tr_dqueue,
+            order_cqueue
+        )
+    )
+    proxy.start()
+
+    # MainProcess method 
+    #method_cqueue.put(("GetMasterCodeName", "005930"))
+    #data = method_dqueue.get()
+    #print(data)
+
+    # MainProcess TR
+    tr_cmd = {
+        'rqname': "opt10001",
+        'trcode': 'opt10001',
+        'next': '0',
+        'screen': '1000',
+        'input': {
+            "종목코드": "005930"
+        },
+        'output': ['종목코드', '종목명', 'PER', 'PBR']
+    }
+    tr_cqueue.put(tr_cmd)
+    data = tr_dqueue.get()
     print(data)
+
 
     ## 로그인
     #kiwoom = Kiwoom()
