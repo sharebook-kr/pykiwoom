@@ -12,10 +12,11 @@ logging.basicConfig(filename="log.txt", level=logging.ERROR)
 
 
 class Kiwoom:
-    def __init__(self, login=False, tr_dqueue=None):
+    def __init__(self, login=False, tr_dqueue=None, tr_oqueue=None):
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
 
         self.tr_dqueue = tr_dqueue
+        self.tr_oqueue = tr_oqueue
 
         self.connected = False              # for login event
         self.received = False               # for tr event
@@ -31,7 +32,6 @@ class Kiwoom:
 
     def _handler_login(self, err_code):
         logging.info(f"hander login {err_code}")
-        print("login 완료")
         if err_code == 0:
             self.connected = True
 
@@ -65,7 +65,7 @@ class Kiwoom:
         #print(screen, rqname, trcode, record, next)
 
         if self.tr_dqueue is not None:
-            items = self.tr_output_items
+            items = self.tr_oqueue.get()
             data = self.get_data(trcode, rqname, items)
             self.tr_dqueue.put(data)
 
@@ -424,9 +424,10 @@ class KiwoomProxy:
         self.method_cqueue = method_cqueue 
         self.method_dqueue = method_dqueue 
         self.tr_cqueue = tr_cqueue 
+        self.tr_oqueue = mp.Queue()
         self.order_cqueue = order_cqueue 
 
-        self.kiwoom = Kiwoom(tr_dqueue=tr_dqueue)
+        self.kiwoom = Kiwoom(tr_dqueue=tr_dqueue, tr_oqueue=self.tr_oqueue)
         self.kiwoom.CommConnect()
         self.run()
 
@@ -452,11 +453,45 @@ class KiwoomProxy:
                 for id, value in input.items():
                     self.kiwoom.SetInputValue(id, value)
 
-                self.kiwoom.tr_output_items = output
+                #self.kiwoom.tr_output_items = output
+                self.tr_oqueue.put(output) 
                 self.kiwoom.CommRqData(rqname, trcode, next, screen)
 
             pythoncom.PumpWaitingMessages()
 
+
+class KiwoomManager:
+    def __init__(self):
+        # SubProcess
+        self.method_cqueue  = mp.Queue()
+        self.method_dqueue  = mp.Queue()
+        self.tr_cqueue      = mp.Queue()
+        self.tr_dqueue      = mp.Queue()
+        self.order_cqueue   = mp.Queue()
+
+        self.proxy = mp.Process(
+            target=KiwoomProxy, 
+            args=(
+                self.method_cqueue, 
+                self.method_dqueue,
+                self.tr_cqueue, 
+                self.tr_dqueue,
+                self.order_cqueue
+            )
+        )
+        self.proxy.start()
+
+    def put_method(self, cmd):
+        self.method_cqueue.put(cmd)
+
+    def get_method(self):
+        return self.method_dqueue.get()
+
+    def put_tr(self, cmd):
+        self.tr_cqueue.put(cmd)
+
+    def get_tr(self):
+        return self.tr_dqueue.get()
 
 
 if not QApplication.instance():
@@ -464,7 +499,29 @@ if not QApplication.instance():
 
 
 if __name__ == "__main__":
+    manager = KiwoomManager()
+
+    #manager.put_method(("GetMasterCodeName", "005930"))
+    #data = manager.get_method()
+    #print(data)
+
+    tr_cmd = {
+        'rqname': "opt10001",
+        'trcode': 'opt10001',
+        'next': '0',
+        'screen': '1000',
+        'input': {
+            "종목코드": "005930"
+        },
+        'output': ['종목코드', '종목명', 'PER', 'PBR']
+    }
+    manager.put_tr(tr_cmd)
+    data = manager.get_tr()
+    print(data)
+
+
     # SubProcess
+    '''
     method_cqueue = mp.Queue()
     method_dqueue = mp.Queue()
     tr_cqueue = mp.Queue()
@@ -482,6 +539,7 @@ if __name__ == "__main__":
         )
     )
     proxy.start()
+    '''
 
     # MainProcess method 
     #method_cqueue.put(("GetMasterCodeName", "005930"))
@@ -489,6 +547,7 @@ if __name__ == "__main__":
     #print(data)
 
     # MainProcess TR
+    '''
     tr_cmd = {
         'rqname': "opt10001",
         'trcode': 'opt10001',
@@ -502,6 +561,7 @@ if __name__ == "__main__":
     tr_cqueue.put(tr_cmd)
     data = tr_dqueue.get()
     print(data)
+    '''
 
 
     ## 로그인
