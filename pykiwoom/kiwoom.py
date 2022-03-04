@@ -4,6 +4,7 @@ from PyQt5.QAxContainer import *
 import pythoncom
 import datetime
 from pykiwoom import parser
+from pykiwoom import real 
 import pandas as pd
 import logging
 import multiprocessing as mp
@@ -12,11 +13,13 @@ logging.basicConfig(filename="log.txt", level=logging.ERROR)
 
 
 class Kiwoom:
-    def __init__(self, login=False, tr_dqueue=None, tr_oqueue=None):
+    def __init__(self, login=False, tr_dqueue=None, tr_oqueue=None, real_dqueues=None):
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
 
-        self.tr_dqueue = tr_dqueue
-        self.tr_oqueue = tr_oqueue
+        # queues
+        self.tr_dqueue      = tr_dqueue          # tr data queue
+        self.tr_oqueue      = tr_oqueue          # tr output item queue
+        self.real_dqueues   = real_dqueues       # real data queue list
 
         self.connected = False              # for login event
         self.received = False               # for tr event
@@ -27,19 +30,49 @@ class Kiwoom:
         self.condition_loaded = False
         self._set_signals_slots()
 
+        self.real_fid = {
+            "주식시세": [], 
+            "주식체결": [], 
+            "주식우선호가": [],
+            "주식호가잔량": [],
+            "주식시간외호가": [],
+            "주식당일거래원": [], 
+            "ETF NAV": [], 
+            "ELW 지표": [], 
+            "ELW 이론가": [], 
+            "주식예상체결": [],
+            "주식종목정보": [], 
+            "선물옵션우선호가": [], 
+            "선물시세": [], 
+            "선물호가잔량": [],
+            "선물이론가": [], 
+            "옵션시세": [], 
+            "옵션호가잔량": [],
+            "옵션이론가": [],
+            "선물옵션우선호가": [], 
+            "업종지수": [], 
+            "업종등록": [], 
+            "장시작시간": [],
+            "VI발동/해제": [],
+            "주문체결": [],
+            "파생잔고": [], 
+            "잔고": [], 
+            "종목프로그램매매": [] 
+        }
+
         if login:
             self.CommConnect()
 
-    def _handler_login(self, err_code):
+    def OnEventConnect(self, err_code):
         logging.info(f"hander login {err_code}")
         if err_code == 0:
             self.connected = True
 
-    def _handler_condition_load(self, ret, msg):
+    def OnReceiveConditionVer(self, ret, msg):
         if ret == 1:
             self.condition_loaded = True
 
-    def _handler_tr_condition(self, screen_no, code_list, cond_name, cond_index, next):
+    def OnReceiveTrCondition(self, screen_no, code_list, cond_name, cond_index, next):
         codes = code_list.split(';')[:-1]
         self.tr_condition_data = codes
         self.tr_condition_loaded= True
@@ -61,7 +94,7 @@ class Kiwoom:
         df = pd.DataFrame(data=data_list, columns=items)
         return df
 
-    def _handler_tr(self, screen, rqname, trcode, record, next):
+    def OnReceiveTrData(self, screen, rqname, trcode, record, next):
         #print(screen, rqname, trcode, record, next)
 
         if self.tr_dqueue is not None:
@@ -106,19 +139,43 @@ class Kiwoom:
         except:
             pass
 
-    def _handler_msg(self, screen, rqname, trcode, msg):
+    def OnReceiveMsg(self, screen, rqname, trcode, msg):
         logging.info(f"OnReceiveMsg {screen} {rqname} {trcode} {msg}")
 
-    def _handler_chejan(self, gubun, item_cnt, fid_list):
+    def OnReceiveChejanData(self, gubun, item_cnt, fid_list):
         logging.info(f"OnReceiveChejanData {gubun} {item_cnt} {fid_list}")
 
+    def OnReceiveRealData(self, code, real_type, data):
+        """실시간 데이터를 받는 시점에 콜백되는 메소드입니다. 
+
+        Args:
+            code (str): 종목코드
+            real_type (str): 리얼타입 (주식시세, 주식체결, ...)
+            data (str): 실시간 데이터 전문 
+        """
+        # get real queue index 
+        index = real.real_index.get(real_type)
+        fid_list = self.real_fid[real_type]
+
+        # get real data
+        real_data = {}
+        for fid in fid_list:
+            data = self.GetCommRealData(code, fid)
+            real_data[fid] = data
+
+        # put real data to the queue
+        self.real_dqueues[index].put(real_data)
+
     def _set_signals_slots(self):
-        self.ocx.OnEventConnect.connect(self._handler_login)
-        self.ocx.OnReceiveTrData.connect(self._handler_tr)
-        self.ocx.OnReceiveConditionVer.connect(self._handler_condition_load)
-        self.ocx.OnReceiveTrCondition.connect(self._handler_tr_condition)
-        self.ocx.OnReceiveMsg.connect(self._handler_msg)
-        self.ocx.OnReceiveChejanData.connect(self._handler_chejan)
+        self.ocx.OnEventConnect.connect(self.OnEventConnect)
+        self.ocx.OnReceiveTrData.connect(self.OnReceiveTrData)
+        self.ocx.OnReceiveConditionVer.connect(self.OnReceiveConditionVer)
+        self.ocx.OnReceiveTrCondition.connect(self.OnReceiveTrCondition)
+        self.ocx.OnReceiveMsg.connect(self.OnReceiveMsg)
+        self.ocx.OnReceiveChejanData.connect(self.OnReceiveChejanData)
+
+        # real 
+        self.ocx.OnReceiveRealData.connect(self.OnReceiveRealData)
 
     #-------------------------------------------------------------------------------------------------------------------
     # OpenAPI+ 메서드
@@ -373,8 +430,8 @@ class Kiwoom:
 
         return self.tr_data
 
-    def SetRealReg(self, screen, code_list, fid_list, real_type):
-        ret = self.ocx.dynamicCall("SetRealReg(QString, QString, QString, QString)", screen, code_list, fid_list, real_type)
+    def SetRealReg(self, screen, code_list, fid_list, opt_type):
+        ret = self.ocx.dynamicCall("SetRealReg(QString, QString, QString, QString)", screen, code_list, fid_list, opt_type)
         return ret
 
     def SetRealRemove(self, screen, del_code):
@@ -420,19 +477,38 @@ class Kiwoom:
 class KiwoomProxy:
     app = QApplication(sys.argv)
 
-    def __init__(self, method_cqueue, method_dqueue, tr_cqueue, tr_dqueue, order_cqueue):
-        self.method_cqueue = method_cqueue 
-        self.method_dqueue = method_dqueue 
-        self.tr_cqueue = tr_cqueue 
-        self.tr_oqueue = mp.Queue()
-        self.order_cqueue = order_cqueue 
+    def __init__(self, method_cqueue, method_dqueue, tr_cqueue, tr_dqueue, order_cqueue, real_cqueue, real_dqueues):
+        # method queue
+        self.method_cqueue  = method_cqueue 
+        self.method_dqueue  = method_dqueue 
 
-        self.kiwoom = Kiwoom(tr_dqueue=tr_dqueue, tr_oqueue=self.tr_oqueue)
+        # tr queue
+        self.tr_cqueue      = tr_cqueue 
+        self.tr_oqueue      = mp.Queue()
+
+        # order queue
+        self.order_cqueue   = order_cqueue 
+
+        # real queue
+        self.real_cqueue    = real_cqueue 
+        self.real_dqueues   = real_dqueues
+
+        # kiwoom instance
+        self.kiwoom = Kiwoom(
+            tr_dqueue=tr_dqueue, 
+            tr_oqueue=self.tr_oqueue, 
+            real_dqueues=self.real_dqueues
+        )
+
+        # kiwoom login
         self.kiwoom.CommConnect()
+
+        # subprocess run
         self.run()
 
     def run(self):
         while True: 
+            # method
             if not self.method_cqueue.empty():
                 func_name, *params = self.method_cqueue.get()
 
@@ -441,6 +517,7 @@ class KiwoomProxy:
                     result = func(*params)
                     self.method_dqueue.put(result)
 
+            # tr
             if not self.tr_cqueue.empty():
                 tr_cmd = self.tr_cqueue.get()
                 rqname = tr_cmd['rqname']
@@ -457,41 +534,29 @@ class KiwoomProxy:
                 self.tr_oqueue.put(output) 
                 self.kiwoom.CommRqData(rqname, trcode, next, screen)
 
+            # real
+            if not self.real_cqueue.empty():
+                real_cmd  = self.real_cqueue.get()
+                func_name = real_cmd['func_name']   # SetRealReg/DisConnectRealData
+                real_type = real_cmd['real_type']
+                screen_no = real_cmd['screen']
+                code_list = real_cmd['code_list']   # "005930"
+                fid_list  = real_cmd['fid_list']    # "215;20;214"
+                opt_type  = real_cmd['opt_type']
+
+                # register fid 
+                self.kiwoom.real_fid[real_type].clear()     # clear list
+                fid_tokens = fid_list.split(';')
+                for fid in fid_tokens:
+                    self.kiwoom.real_fid[real_type].append(int(fid))
+
+                if func_name == "SetRealReg":
+                    self.kiwoom.SetRealReg(screen_no, code_list, fid_list, opt_type) 
+                elif func_name == "DisConnectRealData": 
+                    self.kiwoom.DisconnectRealData(screen_no)
+ 
             pythoncom.PumpWaitingMessages()
 
-
-class KiwoomManager:
-    def __init__(self):
-        # SubProcess
-        self.method_cqueue  = mp.Queue()
-        self.method_dqueue  = mp.Queue()
-        self.tr_cqueue      = mp.Queue()
-        self.tr_dqueue      = mp.Queue()
-        self.order_cqueue   = mp.Queue()
-
-        self.proxy = mp.Process(
-            target=KiwoomProxy, 
-            args=(
-                self.method_cqueue, 
-                self.method_dqueue,
-                self.tr_cqueue, 
-                self.tr_dqueue,
-                self.order_cqueue
-            )
-        )
-        self.proxy.start()
-
-    def put_method(self, cmd):
-        self.method_cqueue.put(cmd)
-
-    def get_method(self):
-        return self.method_dqueue.get()
-
-    def put_tr(self, cmd):
-        self.tr_cqueue.put(cmd)
-
-    def get_tr(self):
-        return self.tr_dqueue.get()
 
 
 if not QApplication.instance():
@@ -499,71 +564,7 @@ if not QApplication.instance():
 
 
 if __name__ == "__main__":
-    manager = KiwoomManager()
-
-    #manager.put_method(("GetMasterCodeName", "005930"))
-    #data = manager.get_method()
-    #print(data)
-
-    tr_cmd = {
-        'rqname': "opt10001",
-        'trcode': 'opt10001',
-        'next': '0',
-        'screen': '1000',
-        'input': {
-            "종목코드": "005930"
-        },
-        'output': ['종목코드', '종목명', 'PER', 'PBR']
-    }
-    manager.put_tr(tr_cmd)
-    data = manager.get_tr()
-    print(data)
-
-
-    # SubProcess
-    '''
-    method_cqueue = mp.Queue()
-    method_dqueue = mp.Queue()
-    tr_cqueue = mp.Queue()
-    tr_dqueue = mp.Queue()
-    order_cqueue = mp.Queue()
-
-    proxy = mp.Process(
-        target=KiwoomProxy, 
-        args=(
-            method_cqueue, 
-            method_dqueue,
-            tr_cqueue, 
-            tr_dqueue,
-            order_cqueue
-        )
-    )
-    proxy.start()
-    '''
-
-    # MainProcess method 
-    #method_cqueue.put(("GetMasterCodeName", "005930"))
-    #data = method_dqueue.get()
-    #print(data)
-
-    # MainProcess TR
-    '''
-    tr_cmd = {
-        'rqname': "opt10001",
-        'trcode': 'opt10001',
-        'next': '0',
-        'screen': '1000',
-        'input': {
-            "종목코드": "005930"
-        },
-        'output': ['종목코드', '종목명', 'PER', 'PBR']
-    }
-    tr_cqueue.put(tr_cmd)
-    data = tr_dqueue.get()
-    print(data)
-    '''
-
-
+    pass 
     ## 로그인
     #kiwoom = Kiwoom()
     #kiwoom.CommConnect(block=True)

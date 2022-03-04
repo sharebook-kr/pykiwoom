@@ -15,8 +15,14 @@ if __name__ == "__main__":
         'output': ['종목코드', '종목명', 'PER', 'PBR']
     }
 
-    km.put_tr(tr_cmd)
-    data = km.get_tr()
-    print(data)
+    codes = ["005930", "000020", "035720"]
+    for code in codes:
+        tr_cmd['input']['종목코드'] = code
+        km.put_tr(tr_cmd)
+
+    for code in codes: 
+        data = km.get_tr()
+        print(data)
+
 
 

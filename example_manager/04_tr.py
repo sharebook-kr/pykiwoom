@@ -1,7 +1,7 @@
-from pykiwoom.kiwoom import *
+import pykiwoom
 
 if __name__ == "__main__":
-    km = KiwoomManager()
+    km = pykiwoom.KiwoomManager()
 
     tr_cmd = {
         'rqname': "opt10081",
