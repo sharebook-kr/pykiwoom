@@ -19,10 +19,9 @@ if __name__ == "__main__":
     for code in codes:
         tr_cmd['input']['종목코드'] = code
         km.put_tr(tr_cmd)
-
-    for code in codes: 
         data = km.get_tr()
         print(data)
+
 
 
 

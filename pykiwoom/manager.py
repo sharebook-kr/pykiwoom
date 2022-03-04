@@ -7,18 +7,26 @@ REAL_TYPE_NUM = len(real_index)
 class KiwoomManager:
     def __init__(self, daemon=True):
         # SubProcess
-        # queue
-        self.method_cqueue  = mp.Queue()
-        self.method_dqueue  = mp.Queue()
-        self.tr_cqueue      = mp.Queue()
-        self.tr_dqueue      = mp.Queue()
-        self.order_cqueue   = mp.Queue()
+        # method queue
+        self.method_cqueue      = mp.Queue()
+        self.method_dqueue      = mp.Queue()
+
+        # tr queue
+        self.tr_cqueue          = mp.Queue()
+        self.tr_dqueue          = mp.Queue()
+
+        # order queue
+        self.order_cqueue       = mp.Queue()
 
         # real queue
-        self.real_cqueue    = mp.Queue()
-        self.real_dqueues   = [
-            mp.Queue() for x in range(REAL_TYPE_NUM)
-        ]
+        self.real_cqueue        = mp.Queue()
+        self.real_dqueues       = [mp.Queue() for x in range(REAL_TYPE_NUM) ]
+
+        # condition queue
+        self.cond_cqueue        = mp.Queue()
+        self.cond_dqueue        = mp.Queue()
+        self.tr_cond_dqueue     = mp.Queue()
+        self.real_cond_dqueue   = mp.Queue()
 
         self.proxy = mp.Process(
             target=KiwoomProxy, 
@@ -33,27 +41,50 @@ class KiwoomManager:
                 self.order_cqueue,
                 # real queue 
                 self.real_cqueue, 
-                self.real_dqueues
+                self.real_dqueues,
+                # condition queue 
+                self.cond_cqueue, 
+                self.cond_dqueue,
+                self.tr_cond_dqueue, 
+                self.real_cond_dqueue
             ),
             daemon=daemon 
         )
         self.proxy.start()
 
+    # method
     def put_method(self, cmd):
         self.method_cqueue.put(cmd)
 
     def get_method(self):
         return self.method_dqueue.get()
 
+    # tr
     def put_tr(self, cmd):
         self.tr_cqueue.put(cmd)
 
     def get_tr(self):
         return self.tr_dqueue.get()
 
+    # order
+    def put_order(self, cmd):
+        self.order_cqueue.put(cmd)
+
+    # real
     def put_real(self, cmd):
         self.real_cqueue.put(cmd)
 
     def get_real(self, name):
         index = real_index.get(name)
         return self.real_dqueues[index].get()
+
+    # condition
+    def put_cond(self, cmd):
+        self.cond_cqueue.put(cmd) 
+    
+    def get_cond(self, real=False):
+        if real is True: 
+            return self.real_cond_dqueue.get()
+        else:
+            return self.tr_cond_dqueue.get()
+    

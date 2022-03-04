@@ -4,7 +4,7 @@ from PyQt5.QAxContainer import *
 import pythoncom
 import datetime
 from pykiwoom import parser
-from pykiwoom import real 
+from pykiwoom import real_type
 import pandas as pd
 import logging
 import multiprocessing as mp
@@ -13,23 +13,29 @@ logging.basicConfig(filename="log.txt", level=logging.ERROR)
 
 
 class Kiwoom:
-    def __init__(self, login=False, tr_dqueue=None, tr_oqueue=None, real_dqueues=None):
+    def __init__(self, login=False, 
+                 tr_dqueue=None, 
+                 real_dqueues=None, 
+                 tr_cond_dqueue=None, real_cond_dqueue=None):
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
 
         # queues
-        self.tr_dqueue      = tr_dqueue          # tr data queue
-        self.tr_oqueue      = tr_oqueue          # tr output item queue
-        self.real_dqueues   = real_dqueues       # real data queue list
+        self.tr_dqueue          = tr_dqueue          # tr data queue
+        self.real_dqueues       = real_dqueues       # real data queue list
+        self.tr_cond_dqueue     = tr_cond_dqueue
+        self.real_cond_dqueue   = real_cond_dqueue
 
-        self.connected = False              # for login event
-        self.received = False               # for tr event
-        self.tr_items = None                # tr input/output items
-        self.tr_data = None                 # tr output data
-        self.tr_record = None
-        self.tr_remained = False
-        self.condition_loaded = False
+        self.connected          = False              # for login event
+        self.received           = False              # for tr event
+        self.tr_items           = None               # tr input/output items
+        self.tr_data            = None               # tr output data
+        self.tr_record          = None
+        self.tr_remained        = False
+        self.condition_loaded   = False
+
         self._set_signals_slots()
 
+        self.tr_output = {}
         self.real_fid = {
             "주식시세": [], 
             "주식체결": [], 
@@ -72,10 +78,48 @@ class Kiwoom:
         if ret == 1:
             self.condition_loaded = True
 
+    def OnReceiveRealCondition(self, code, id_type, cond_name, cond_index): 
+        """이벤트 함수로 편입, 이탈 종목이 실시간으로 들어오는 callback 함수
+
+        Args:
+            code (str): 종목코드 
+            id_type (str): 편입('I'), 이탈('D')
+            cond_name (str): 조건명
+            cond_index (str): 조건명 인덱스
+        """
+        output = {
+            'code': code,
+            'type': id_type,
+            'cond_name': cond_name,
+            'cond_index': cond_index
+        }
+        self.real_cond_dqueue.put(output)
+
     def OnReceiveTrCondition(self, screen_no, code_list, cond_name, cond_index, next):
+        """일반조회 TR에 대한 callback 함수
+
+        Args:
+            screen_no (str): 종목코드 
+            code_list (str): 종목리스트(";"로 구분)
+            cond_name (str): 조건명
+            cond_index (int): 조건명 인덱스
+            next (int): 연속조회(0: 연속조회 없음, 2: 연속조회)
+        """
+        # legacy interface
         codes = code_list.split(';')[:-1]
         self.tr_condition_data = codes
         self.tr_condition_loaded= True
+
+        # queue 
+        if self.tr_cond_dqueue is not None:
+            output = {
+                'screen_no': screen_no,
+                'code_list': codes,
+                'cond_name': cond_name,
+                'cond_index': cond_index,
+                'next': next
+            }
+            self.tr_cond_dqueue.put(output)
 
     def get_data(self, trcode, rqname, items):
         rows = self.GetRepeatCnt(trcode, rqname)
@@ -98,7 +142,7 @@ class Kiwoom:
         #print(screen, rqname, trcode, record, next)
 
         if self.tr_dqueue is not None:
-            items = self.tr_oqueue.get()
+            items = self.tr_output[trcode]
             data = self.get_data(trcode, rqname, items)
             self.tr_dqueue.put(data)
 
@@ -145,17 +189,17 @@ class Kiwoom:
     def OnReceiveChejanData(self, gubun, item_cnt, fid_list):
         logging.info(f"OnReceiveChejanData {gubun} {item_cnt} {fid_list}")
 
-    def OnReceiveRealData(self, code, real_type, data):
+    def OnReceiveRealData(self, code, rtype, data):
         """실시간 데이터를 받는 시점에 콜백되는 메소드입니다. 
 
         Args:
             code (str): 종목코드
-            real_type (str): 리얼타입 (주식시세, 주식체결, ...)
+            rtype (str): 리얼타입 (주식시세, 주식체결, ...)
             data (str): 실시간 데이터 전문 
         """
         # get real queue index 
-        index = real.real_index.get(real_type)
-        fid_list = self.real_fid[real_type]
+        index = real_type.real_index.get(rtype)
+        fid_list = self.real_fid[rtype]
 
         # get real data
         real_data = {}
@@ -167,15 +211,14 @@ class Kiwoom:
         self.real_dqueues[index].put(real_data)
 
     def _set_signals_slots(self):
-        self.ocx.OnEventConnect.connect(self.OnEventConnect)
         self.ocx.OnReceiveTrData.connect(self.OnReceiveTrData)
-        self.ocx.OnReceiveConditionVer.connect(self.OnReceiveConditionVer)
-        self.ocx.OnReceiveTrCondition.connect(self.OnReceiveTrCondition)
+        self.ocx.OnReceiveRealData.connect(self.OnReceiveRealData)
         self.ocx.OnReceiveMsg.connect(self.OnReceiveMsg)
         self.ocx.OnReceiveChejanData.connect(self.OnReceiveChejanData)
-
-        # real 
-        self.ocx.OnReceiveRealData.connect(self.OnReceiveRealData)
+        self.ocx.OnEventConnect.connect(self.OnEventConnect)
+        self.ocx.OnReceiveRealCondition.connect(self.OnReceiveRealCondition)
+        self.ocx.OnReceiveTrCondition.connect(self.OnReceiveTrCondition)
+        self.ocx.OnReceiveConditionVer.connect(self.OnReceiveConditionVer)
 
     #-------------------------------------------------------------------------------------------------------------------
     # OpenAPI+ 메서드
@@ -440,6 +483,7 @@ class Kiwoom:
 
     def GetConditionLoad(self, block=True):
         self.condition_loaded = False
+
         self.ocx.dynamicCall("GetConditionLoad()")
         if block:
             while not self.condition_loaded:
@@ -457,14 +501,31 @@ class Kiwoom:
 
         return result
 
-    def SendCondition(self, screen, cond_name, cond_index, search):
-        self.tr_condition_loaded = False
+    def SendCondition(self, screen, cond_name, cond_index, search, block=True):
+        """조건검색 종목조회 TR을 송신
+
+        Args:
+            screen (str): 화면번호 
+            cond_name (str): 조건명 
+            cond_index (int): 조건명 인덱스
+            search (int): 0: 일반조회, 1: 실시간조회, 2: 연속조회
+            block (bool): True: blocking request, False: Non-blocking request
+
+        Returns:
+            None: _description_
+        """
+        if block is True:
+            self.tr_condition_loaded = False
+        
         self.ocx.dynamicCall("SendCondition(QString, QString, int, int)", screen, cond_name, cond_index, search)
 
-        while not self.tr_condition_loaded:
-            pythoncom.PumpWaitingMessages()
+        if block is True:
+            while not self.tr_condition_loaded:
+                pythoncom.PumpWaitingMessages()
 
-        return self.tr_condition_data
+        if block is True:
+            return self.tr_condition_data
+
 
     def SendConditionStop(self, screen, cond_name, index):
         self.ocx.dynamicCall("SendConditionStop(QString, QString, int)", screen, cond_name, index)
@@ -477,14 +538,20 @@ class Kiwoom:
 class KiwoomProxy:
     app = QApplication(sys.argv)
 
-    def __init__(self, method_cqueue, method_dqueue, tr_cqueue, tr_dqueue, order_cqueue, real_cqueue, real_dqueues):
+    def __init__(self, 
+                 method_cqueue, method_dqueue, 
+                 tr_cqueue, tr_dqueue, 
+                 order_cqueue, 
+                 real_cqueue, real_dqueues, 
+                 cond_cqueue, cond_dqueue, 
+                 tr_cond_dqueue, real_cond_dqueue):
         # method queue
         self.method_cqueue  = method_cqueue 
         self.method_dqueue  = method_dqueue 
 
         # tr queue
         self.tr_cqueue      = tr_cqueue 
-        self.tr_oqueue      = mp.Queue()
+        self.tr_dqueue      = tr_dqueue
 
         # order queue
         self.order_cqueue   = order_cqueue 
@@ -493,15 +560,25 @@ class KiwoomProxy:
         self.real_cqueue    = real_cqueue 
         self.real_dqueues   = real_dqueues
 
+        # condition queue
+        self.cond_cqueue      = cond_cqueue         # tr/real condition command queue 
+        self.cond_dqueue      = cond_dqueue         # condition name list queue
+        self.tr_cond_dqueue   = tr_cond_dqueue      # tr condition data queue
+        self.real_cond_dqueue = real_cond_dqueue    # real condition data queue
+
         # kiwoom instance
         self.kiwoom = Kiwoom(
-            tr_dqueue=tr_dqueue, 
-            tr_oqueue=self.tr_oqueue, 
-            real_dqueues=self.real_dqueues
+            tr_dqueue           = self.tr_dqueue, 
+            real_dqueues        = self.real_dqueues,
+            tr_cond_dqueue      = self.tr_cond_dqueue,
+            real_cond_dqueue    = self.real_cond_dqueue 
         )
 
         # kiwoom login
         self.kiwoom.CommConnect()
+
+        # condition load 
+        self.kiwoom.GetConditionLoad()
 
         # subprocess run
         self.run()
@@ -520,6 +597,8 @@ class KiwoomProxy:
             # tr
             if not self.tr_cqueue.empty():
                 tr_cmd = self.tr_cqueue.get()
+
+                # parameters
                 rqname = tr_cmd['rqname']
                 trcode = tr_cmd['trcode']
                 next   = tr_cmd['next']
@@ -530,16 +609,35 @@ class KiwoomProxy:
                 for id, value in input.items():
                     self.kiwoom.SetInputValue(id, value)
 
-                #self.kiwoom.tr_output_items = output
-                self.tr_oqueue.put(output) 
+                self.kiwoom.tr_output[trcode] = output
                 self.kiwoom.CommRqData(rqname, trcode, next, screen)
+
+            # order
+            if not self.order_cqueue.empty():
+                order_cmd = self.order_cqueue.get()
+
+                # parameters
+                rqname      = order_cmd['rqname']
+                screen      = order_cmd['screen']
+                acc_no      = order_cmd['acc_no']
+                order_type  = order_cmd['order_type']
+                code        = order_cmd['code']
+                quantity    = order_cmd['quantity']
+                price       = order_cmd['price']
+                hoga_gb     = order_cmd['hoga_gb']
+                order_no    = order_cmd['order_no']
+
+                # request api 
+                self.kiwoom.SendOrder(rqname, screen, acc_no, order_type, code, quantity, price, hoga_gb, order_no)
 
             # real
             if not self.real_cqueue.empty():
                 real_cmd  = self.real_cqueue.get()
+
+                # parameters
                 func_name = real_cmd['func_name']   # SetRealReg/DisConnectRealData
                 real_type = real_cmd['real_type']
-                screen_no = real_cmd['screen']
+                screen    = real_cmd['screen']
                 code_list = real_cmd['code_list']   # "005930"
                 fid_list  = real_cmd['fid_list']    # "215;20;214"
                 opt_type  = real_cmd['opt_type']
@@ -551,12 +649,36 @@ class KiwoomProxy:
                     self.kiwoom.real_fid[real_type].append(int(fid))
 
                 if func_name == "SetRealReg":
-                    self.kiwoom.SetRealReg(screen_no, code_list, fid_list, opt_type) 
+                    self.kiwoom.SetRealReg(screen, code_list, fid_list, opt_type) 
                 elif func_name == "DisConnectRealData": 
-                    self.kiwoom.DisconnectRealData(screen_no)
- 
-            pythoncom.PumpWaitingMessages()
+                    self.kiwoom.DisconnectRealData(screen)
 
+            # condition
+            # cond_cmd = {
+            #   'screen': 1000,
+            #   'cond_name': 'pbr', (condition name)
+            #   'index': 0, (condition index)
+            #   'search': 0/1/2 
+            # }
+            if not self.cond_cqueue.empty():
+                cond_cmd    = self.cond_cqueue.get()
+
+                # parameters
+                func_name   = cond_cmd['func_name']   # SendCondition/SendConditionStop
+                screen      = cond_cmd['screen']
+                cond_name   = cond_cmd['cond_name']
+                index       = cond_cmd['index']
+                search      = cond_cmd['search']
+
+                if func_name == "GetConditionNameList":
+                    cond_list = self.kiwoom.GetConditionNameList()
+                    self.cond_dqueue.put(cond_list)
+                elif func_name == "SendCondition":
+                    self.kiwoom.SendCondition(screen, cond_name, index, search, block=False)
+                elif func_name == "SendConditionStop":
+                    self.kiwoom.SendConditionStop(screen, cond_name, index)
+
+            pythoncom.PumpWaitingMessages()
 
 
 if not QApplication.instance():
