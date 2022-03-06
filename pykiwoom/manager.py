@@ -28,6 +28,9 @@ class KiwoomManager:
         self.tr_cond_dqueue     = mp.Queue()
         self.real_cond_dqueue   = mp.Queue()
 
+        # chejan queue 
+        self.chejan_dqueue      = mp.Queue()
+
         self.proxy = mp.Process(
             target=KiwoomProxy, 
             args=(
@@ -46,7 +49,9 @@ class KiwoomManager:
                 self.cond_cqueue, 
                 self.cond_dqueue,
                 self.tr_cond_dqueue, 
-                self.real_cond_dqueue
+                self.real_cond_dqueue,
+                # chejan queue
+                self.chejan_dqueue
             ),
             daemon=daemon 
         )
@@ -87,4 +92,6 @@ class KiwoomManager:
             return self.real_cond_dqueue.get()
         else:
             return self.tr_cond_dqueue.get()
-    
+
+    def get_chejan(self): 
+        return self.chejan_dqueue.get()

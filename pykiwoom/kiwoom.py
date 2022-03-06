@@ -16,7 +16,9 @@ class Kiwoom:
     def __init__(self, login=False, 
                  tr_dqueue=None, 
                  real_dqueues=None, 
-                 tr_cond_dqueue=None, real_cond_dqueue=None):
+                 tr_cond_dqueue=None, 
+                 real_cond_dqueue=None, 
+                 chejan_dqueue=None):
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
 
         # queues
@@ -24,6 +26,7 @@ class Kiwoom:
         self.real_dqueues       = real_dqueues       # real data queue list
         self.tr_cond_dqueue     = tr_cond_dqueue
         self.real_cond_dqueue   = real_cond_dqueue
+        self.chejan_dqueue      = chejan_dqueue
 
         self.connected          = False              # for login event
         self.received           = False              # for tr event
@@ -187,7 +190,22 @@ class Kiwoom:
         logging.info(f"OnReceiveMsg {screen} {rqname} {trcode} {msg}")
 
     def OnReceiveChejanData(self, gubun, item_cnt, fid_list):
+        """주문접수, 체결, 잔고 변경시 이벤트가 발생
+
+        Args:
+            gubun (str): '0': 접수, 체결, '1': 잔고 변경
+            item_cnt (int): 아이템 갯수
+            fid_list (str): fid list
+        """
         logging.info(f"OnReceiveChejanData {gubun} {item_cnt} {fid_list}")
+
+        if self.chejan_dqueue is not None:
+            output = {'gubun': gubun}
+            for fid in fid_list.split(';'):
+                data = self.GetChejanData(fid)
+                output[fid]=data
+
+            self.chejan_dqueue.put(output)
 
     def OnReceiveRealData(self, code, rtype, data):
         """실시간 데이터를 받는 시점에 콜백되는 메소드입니다. 
@@ -544,7 +562,8 @@ class KiwoomProxy:
                  order_cqueue, 
                  real_cqueue, real_dqueues, 
                  cond_cqueue, cond_dqueue, 
-                 tr_cond_dqueue, real_cond_dqueue):
+                 tr_cond_dqueue, real_cond_dqueue, 
+                 chejan_dqueue):
         # method queue
         self.method_cqueue  = method_cqueue 
         self.method_dqueue  = method_dqueue 
@@ -566,12 +585,16 @@ class KiwoomProxy:
         self.tr_cond_dqueue   = tr_cond_dqueue      # tr condition data queue
         self.real_cond_dqueue = real_cond_dqueue    # real condition data queue
 
+        # chejan
+        self.chejan_dqueue    = chejan_dqueue
+
         # kiwoom instance
         self.kiwoom = Kiwoom(
             tr_dqueue           = self.tr_dqueue, 
             real_dqueues        = self.real_dqueues,
             tr_cond_dqueue      = self.tr_cond_dqueue,
-            real_cond_dqueue    = self.real_cond_dqueue 
+            real_cond_dqueue    = self.real_cond_dqueue,
+            chejan_dqueue       = self.chejan_dqueue
         )
 
         # kiwoom login
