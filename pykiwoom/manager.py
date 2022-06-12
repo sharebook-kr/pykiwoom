@@ -1,6 +1,6 @@
 import multiprocessing as mp
-from .kiwoom import *
-from .real_type import *
+from pykiwoom.real_type import *
+from pykiwoom.kiwoom_proxy import KiwoomProxy
 
 REAL_TYPE_NUM = len(real_index) 
 

@@ -16,7 +16,7 @@ if __name__ == "__main__":
     }
 
     km.put_tr(tr_cmd)
-    data = km.get_tr()
-    print(data)
+    data, remain = km.get_tr()
+    print(data, remain)
 
 

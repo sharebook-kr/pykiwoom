@@ -11,16 +11,18 @@ if __name__ == "__main__":
         'screen': '1000',
         'input': {
             "종목코드": "005930",
-            "기준일자": "20200424",
+            "기준일자": "20220612",
             "수정주가구분": "",
         },
         'output': ["일자", "시가", "고가", "저가", "현재가"]
     }
 
-    for i in range(2):
-        if i != 0:
-            tr_cmd['next'] = '2'
-        
+    while True:
         km.put_tr(tr_cmd)
-        data = km.get_tr()
+        data, remain = km.get_tr()
         print(data)
+
+        if remain:
+            tr_cmd['next'] = '2'
+        else:
+            break
