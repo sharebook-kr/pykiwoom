@@ -9,12 +9,12 @@ import pandas as pd
 
 
 class Kiwoom:
-    def __init__(self, 
-                 login=False, 
-                 tr_dqueue=None, 
-                 real_dqueues=None, 
-                 tr_cond_dqueue=None, 
-                 real_cond_dqueue=None, 
+    def __init__(self,
+                 login=False,
+                 tr_dqueue=None,
+                 real_dqueues=None,
+                 tr_cond_dqueue=None,
+                 real_cond_dqueue=None,
                  chejan_dqueue=None):
         # OCX instance
         self.ocx = QAxWidget("KHOPENAPI.KHOpenAPICtrl.1")
@@ -38,33 +38,33 @@ class Kiwoom:
 
         self.tr_output = {}
         self.real_fid = {
-            "주식시세": [], 
-            "주식체결": [], 
+            "주식시세": [],
+            "주식체결": [],
             "주식우선호가": [],
             "주식호가잔량": [],
             "주식시간외호가": [],
-            "주식당일거래원": [], 
-            "ETF NAV": [], 
-            "ELW 지표": [], 
-            "ELW 이론가": [], 
+            "주식당일거래원": [],
+            "ETF NAV": [],
+            "ELW 지표": [],
+            "ELW 이론가": [],
             "주식예상체결": [],
-            "주식종목정보": [], 
-            "선물옵션우선호가": [], 
-            "선물시세": [], 
+            "주식종목정보": [],
+            "선물옵션우선호가": [],
+            "선물시세": [],
             "선물호가잔량": [],
-            "선물이론가": [], 
-            "옵션시세": [], 
+            "선물이론가": [],
+            "옵션시세": [],
             "옵션호가잔량": [],
             "옵션이론가": [],
-            "선물옵션우선호가": [], 
-            "업종지수": [], 
-            "업종등록": [], 
+            "선물옵션우선호가": [],
+            "업종지수": [],
+            "업종등록": [],
             "장시작시간": [],
             "VI발동/해제": [],
             "주문체결": [],
-            "파생잔고": [], 
-            "잔고": [], 
-            "종목프로그램매매": [] 
+            "파생잔고": [],
+            "잔고": [],
+            "종목프로그램매매": []
         }
 
         if login:
@@ -74,10 +74,10 @@ class Kiwoom:
     # callback functions
     #-------------------------------------------------------------------------------------------------------------------
     def OnEventConnect(self, err_code):
-        """Login Event 
+        """Login Event
 
         Args:
-            err_code (int): 0: login success 
+            err_code (int): 0: login success
         """
         if err_code == 0:
             self.connected = True
@@ -86,11 +86,11 @@ class Kiwoom:
         if ret == 1:
             self.condition_loaded = True
 
-    def OnReceiveRealCondition(self, code, id_type, cond_name, cond_index): 
+    def OnReceiveRealCondition(self, code, id_type, cond_name, cond_index):
         """이벤트 함수로 편입, 이탈 종목이 실시간으로 들어오는 callback 함수
 
         Args:
-            code (str): 종목코드 
+            code (str): 종목코드
             id_type (str): 편입('I'), 이탈('D')
             cond_name (str): 조건명
             cond_index (str): 조건명 인덱스
@@ -107,7 +107,7 @@ class Kiwoom:
         """일반조회 TR에 대한 callback 함수
 
         Args:
-            screen_no (str): 종목코드 
+            screen_no (str): 종목코드
             code_list (str): 종목리스트(";"로 구분)
             cond_name (str): 조건명
             cond_index (int): 조건명 인덱스
@@ -118,7 +118,7 @@ class Kiwoom:
         self.tr_condition_data = codes
         self.tr_condition_loaded= True
 
-        # queue 
+        # queue
         if self.tr_cond_dqueue is not None:
             output = {
                 'screen_no': screen_no,
@@ -211,14 +211,14 @@ class Kiwoom:
             self.chejan_dqueue.put(output)
 
     def OnReceiveRealData(self, code, rtype, data):
-        """실시간 데이터를 받는 시점에 콜백되는 메소드입니다. 
+        """실시간 데이터를 받는 시점에 콜백되는 메소드입니다.
 
         Args:
             code (str): 종목코드
             rtype (str): 리얼타입 (주식시세, 주식체결, ...)
-            data (str): 실시간 데이터 전문 
+            data (str): 실시간 데이터 전문
         """
-        # get real queue index 
+        # get real queue index
         index = real_type.real_index.get(rtype)
         fid_list = self.real_fid[rtype]
 
@@ -256,7 +256,6 @@ class Kiwoom:
                 pythoncom.PumpWaitingMessages()
 
     def CommRqData(self, rqname, trcode, next, screen):
-        print("CommRqData", rqname, trcode, next, screen)
         """
         TR을 서버로 송신합니다.
         :param rqname: 사용자가 임의로 지정할 수 있는 요청 이름
@@ -526,8 +525,8 @@ class Kiwoom:
         """조건검색 종목조회 TR을 송신
 
         Args:
-            screen (str): 화면번호 
-            cond_name (str): 조건명 
+            screen (str): 화면번호
+            cond_name (str): 조건명
             cond_index (int): 조건명 인덱스
             search (int): 0: 일반조회, 1: 실시간조회, 2: 연속조회
             block (bool): True: blocking request, False: Non-blocking request
@@ -537,7 +536,7 @@ class Kiwoom:
         """
         if block is True:
             self.tr_condition_loaded = False
-        
+
         self.ocx.dynamicCall("SendCondition(QString, QString, int, int)", screen, cond_name, cond_index, search)
 
         if block is True:
@@ -562,7 +561,7 @@ if not QApplication.instance():
 
 
 if __name__ == "__main__":
-    pass 
+    pass
     ## 로그인
     #kiwoom = Kiwoom()
     #kiwoom.CommConnect(block=True)
