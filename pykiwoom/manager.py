@@ -2,7 +2,7 @@ import multiprocessing as mp
 from pykiwoom.real_type import *
 from pykiwoom.kiwoom_proxy import KiwoomProxy
 
-REAL_TYPE_NUM = len(real_index) 
+REAL_TYPE_NUM = len(real_index)
 
 class KiwoomManager:
     def __init__(self, daemon=True):
@@ -28,32 +28,32 @@ class KiwoomManager:
         self.tr_cond_dqueue     = mp.Queue()
         self.real_cond_dqueue   = mp.Queue()
 
-        # chejan queue 
+        # chejan queue
         self.chejan_dqueue      = mp.Queue()
 
         self.proxy = mp.Process(
-            target=KiwoomProxy, 
+            target=KiwoomProxy,
             args=(
                 # method queue
-                self.method_cqueue, 
+                self.method_cqueue,
                 self.method_dqueue,
                 # tr queue
-                self.tr_cqueue, 
+                self.tr_cqueue,
                 self.tr_dqueue,
                 # order queue
                 self.order_cqueue,
-                # real queue 
-                self.real_cqueue, 
+                # real queue
+                self.real_cqueue,
                 self.real_dqueues,
-                # condition queue 
-                self.cond_cqueue, 
+                # condition queue
+                self.cond_cqueue,
                 self.cond_dqueue,
-                self.tr_cond_dqueue, 
+                self.tr_cond_dqueue,
                 self.real_cond_dqueue,
                 # chejan queue
                 self.chejan_dqueue
             ),
-            daemon=daemon 
+            daemon=daemon
         )
         self.proxy.start()
 
@@ -85,13 +85,15 @@ class KiwoomManager:
 
     # condition
     def put_cond(self, cmd):
-        self.cond_cqueue.put(cmd) 
-    
-    def get_cond(self, real=False):
-        if real is True: 
+        self.cond_cqueue.put(cmd)
+
+    def get_cond(self, real=False, method=True):
+        if method is True:
+            return self.cond_dqueue.get()
+        elif real is True:
             return self.real_cond_dqueue.get()
         else:
             return self.tr_cond_dqueue.get()
 
-    def get_chejan(self): 
+    def get_chejan(self):
         return self.chejan_dqueue.get()
