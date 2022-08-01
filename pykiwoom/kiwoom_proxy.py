@@ -7,31 +7,31 @@ from pykiwoom.kiwoom import Kiwoom
 class KiwoomProxy:
     app = QApplication(sys.argv)
 
-    def __init__(self, 
-                 method_cqueue, method_dqueue, 
-                 tr_cqueue, tr_dqueue, 
-                 order_cqueue, 
-                 real_cqueue, real_dqueues, 
-                 cond_cqueue, cond_dqueue, 
-                 tr_cond_dqueue, real_cond_dqueue, 
+    def __init__(self,
+                 method_cqueue, method_dqueue,
+                 tr_cqueue, tr_dqueue,
+                 order_cqueue,
+                 real_cqueue, real_dqueues,
+                 cond_cqueue, cond_dqueue,
+                 tr_cond_dqueue, real_cond_dqueue,
                  chejan_dqueue):
         # method queue
-        self.method_cqueue  = method_cqueue 
-        self.method_dqueue  = method_dqueue 
+        self.method_cqueue  = method_cqueue
+        self.method_dqueue  = method_dqueue
 
         # tr queue
-        self.tr_cqueue      = tr_cqueue 
+        self.tr_cqueue      = tr_cqueue
         self.tr_dqueue      = tr_dqueue
 
         # order queue
-        self.order_cqueue   = order_cqueue 
+        self.order_cqueue   = order_cqueue
 
         # real queue
-        self.real_cqueue    = real_cqueue 
+        self.real_cqueue    = real_cqueue
         self.real_dqueues   = real_dqueues
 
         # condition queue
-        self.cond_cqueue      = cond_cqueue         # tr/real condition command queue 
+        self.cond_cqueue      = cond_cqueue         # tr/real condition command queue
         self.cond_dqueue      = cond_dqueue         # condition name list queue
         self.tr_cond_dqueue   = tr_cond_dqueue      # tr condition data queue
         self.real_cond_dqueue = real_cond_dqueue    # real condition data queue
@@ -41,7 +41,7 @@ class KiwoomProxy:
 
         # kiwoom instance
         self.kiwoom = Kiwoom(
-            tr_dqueue           = self.tr_dqueue, 
+            tr_dqueue           = self.tr_dqueue,
             real_dqueues        = self.real_dqueues,
             tr_cond_dqueue      = self.tr_cond_dqueue,
             real_cond_dqueue    = self.real_cond_dqueue,
@@ -51,14 +51,14 @@ class KiwoomProxy:
         # kiwoom login
         self.kiwoom.CommConnect()
 
-        # condition load 
+        # condition load
         self.kiwoom.GetConditionLoad()
 
         # subprocess run
         self.run()
 
     def run(self):
-        while True: 
+        while True:
             # method
             if not self.method_cqueue.empty():
                 func_name, *params = self.method_cqueue.get()
@@ -73,9 +73,9 @@ class KiwoomProxy:
                 tr_cmd = self.tr_cqueue.get()
 
                 # parameters
-                rqname = tr_cmd['rqname']
                 trcode = tr_cmd['trcode']
-                next   = tr_cmd['next']
+                rqname = tr_cmd.get('rqname', trcode)
+                next = tr_cmd.get('next', 0)
                 screen = tr_cmd['screen']
                 input  = tr_cmd['input']
                 output = tr_cmd['output']
@@ -89,7 +89,6 @@ class KiwoomProxy:
             # order
             if not self.order_cqueue.empty():
                 order_cmd = self.order_cqueue.get()
-
                 # parameters
                 rqname      = order_cmd['rqname']
                 screen      = order_cmd['screen']
@@ -101,7 +100,7 @@ class KiwoomProxy:
                 hoga_gb     = order_cmd['hoga_gb']
                 order_no    = order_cmd['order_no']
 
-                # request api 
+                # request api
                 self.kiwoom.SendOrder(rqname, screen, acc_no, order_type, code, quantity, price, hoga_gb, order_no)
 
             # real
@@ -116,15 +115,15 @@ class KiwoomProxy:
                 fid_list  = real_cmd['fid_list']    # "215;20;214"
                 opt_type  = real_cmd['opt_type']
 
-                # register fid 
+                # register fid
                 self.kiwoom.real_fid[real_type].clear()     # clear list
                 fid_tokens = fid_list.split(';')
                 for fid in fid_tokens:
                     self.kiwoom.real_fid[real_type].append(int(fid))
 
                 if func_name == "SetRealReg":
-                    self.kiwoom.SetRealReg(screen, code_list, fid_list, opt_type) 
-                elif func_name == "DisConnectRealData": 
+                    self.kiwoom.SetRealReg(screen, code_list, fid_list, opt_type)
+                elif func_name == "DisConnectRealData":
                     self.kiwoom.DisconnectRealData(screen)
 
             # condition
@@ -132,25 +131,24 @@ class KiwoomProxy:
             #   'screen': 1000,
             #   'cond_name': 'pbr', (condition name)
             #   'index': 0, (condition index)
-            #   'search': 0/1/2 
+            #   'search': 0/1/2
             # }
             if not self.cond_cqueue.empty():
-                cond_cmd    = self.cond_cqueue.get()
-
-                # parameters
-                func_name   = cond_cmd['func_name']   # SendCondition/SendConditionStop
-                screen      = cond_cmd['screen']
-                cond_name   = cond_cmd['cond_name']
-                index       = cond_cmd['index']
-                search      = cond_cmd['search']
-
+                cond_cmd  = self.cond_cqueue.get()
+                func_name = cond_cmd['func_name']   # SendCondition/SendConditionStop
                 if func_name == "GetConditionNameList":
                     cond_list = self.kiwoom.GetConditionNameList()
                     self.cond_dqueue.put(cond_list)
-                elif func_name == "SendCondition":
-                    self.kiwoom.SendCondition(screen, cond_name, index, search, block=False)
-                elif func_name == "SendConditionStop":
-                    self.kiwoom.SendConditionStop(screen, cond_name, index)
+                else:
+                # parameters
+                    cond_name = cond_cmd['cond_name']
+                    index     = cond_cmd['index']
+                    if func_name == "SendCondition":
+                        screen = cond_cmd['screen']
+                        search = cond_cmd['search']
+                        self.kiwoom.SendCondition(screen, cond_name, index, search, block=False)
+                    elif func_name == "SendConditionStop":
+                        self.kiwoom.SendConditionStop(screen, cond_name, index)
 
             pythoncom.PumpWaitingMessages()
 

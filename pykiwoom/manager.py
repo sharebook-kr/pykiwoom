@@ -87,7 +87,7 @@ class KiwoomManager:
     def put_cond(self, cmd):
         self.cond_cqueue.put(cmd)
 
-    def get_cond(self, real=False, method=True):
+    def get_cond(self, real=False, method=False):
         if method is True:
             return self.cond_dqueue.get()
         elif real is True:

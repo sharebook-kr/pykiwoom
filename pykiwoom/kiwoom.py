@@ -148,13 +148,28 @@ class Kiwoom:
 
     def OnReceiveTrData(self, screen, rqname, trcode, record, next):
         #print(screen, rqname, trcode, record, next)
+        # order
+        # - KOA_NORMAL_BUY_KP_ORD  : 코스피 매수
+        # - KOA_NORMAL_SELL_KP_ORD : 코스피 매도
+        # - KOA_NORMAL_KP_CANCEL   : 코스피 주문 취소
+        # - KOA_NORMAL_KP_MODIFY   : 코스피 주문 변경
+        # - KOA_NORMAL_BUY_KQ_ORD  : 코스피 매수
+        # - KOA_NORMAL_SELL_KQ_ORD : 코스피 매도
+        # - KOA_NORMAL_KQ_CANCEL   : 코스피 주문 취소
+        # - KOA_NORMAL_KQ_MODIFY   : 코스피 주문 변경
         if self.tr_dqueue is not None:
+            if trcode in ('KOA_NORMAL_BUY_KP_ORD', 'KOA_NORMAL_SELL_KP_ORD',
+                'KOA_NORMAL_KP_CANCEL', 'KOA_NORMAL_KP_MODIFY',
+                'KOA_NORMAL_BUY_KQ_ORD', 'KOA_NORMAL_SELL_KQ_ORD',
+                'KOA_NORMAL_KQ_CANCEL', 'KOA_NORMAL_KQ_MODIFY'):
+                return None
             items = self.tr_output[trcode]
             data = self.get_data(trcode, rqname, items)
 
             remain = 1 if next == '2' else 0
             self.tr_dqueue.put((data, remain))
         else:
+            print(self.tr_items)
             try:
                 record = None
                 items = None
