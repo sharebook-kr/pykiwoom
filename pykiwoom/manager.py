@@ -1,8 +1,6 @@
 import multiprocessing as mp
-from pykiwoom.real_type import *
 from pykiwoom.kiwoom_proxy import KiwoomProxy
 
-REAL_TYPE_NUM = len(real_index)
 
 class KiwoomManager:
     def __init__(self, daemon=True):
@@ -20,7 +18,7 @@ class KiwoomManager:
 
         # real queue
         self.real_cqueue        = mp.Queue()
-        self.real_dqueues       = [mp.Queue() for x in range(REAL_TYPE_NUM) ]
+        self.real_dqueues       = mp.Queue()
 
         # condition queue
         self.cond_cqueue        = mp.Queue()
@@ -79,9 +77,8 @@ class KiwoomManager:
     def put_real(self, cmd):
         self.real_cqueue.put(cmd)
 
-    def get_real(self, name):
-        index = real_index.get(name)
-        return self.real_dqueues[index].get()
+    def get_real(self):
+        return self.real_dqueues.get()
 
     # condition
     def put_cond(self, cmd):

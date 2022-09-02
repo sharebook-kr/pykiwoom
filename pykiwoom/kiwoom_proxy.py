@@ -109,20 +109,23 @@ class KiwoomProxy:
 
                 # parameters
                 func_name = real_cmd['func_name']   # SetRealReg/DisConnectRealData
-                real_type = real_cmd['real_type']
-                screen    = real_cmd['screen']
-                code_list = real_cmd['code_list']   # "005930"
-                fid_list  = real_cmd['fid_list']    # "215;20;214"
-                opt_type  = real_cmd['opt_type']
-
-                # register fid
-                self.kiwoom.real_fid[real_type].clear()     # clear list
-                fid_tokens = fid_list.split(';')
-                for fid in fid_tokens:
-                    self.kiwoom.real_fid[real_type].append(int(fid))
+                screen    = real_cmd.get('screen', "7999")
 
                 if func_name == "SetRealReg":
-                    self.kiwoom.SetRealReg(screen, code_list, fid_list, opt_type)
+                    code_list = real_cmd['code_list']   # ["005930", "000660"]
+                    fid_list  = real_cmd['fid_list']    # ["215", "20", "214"]
+                    opt_type  = real_cmd['opt_type']
+
+                    # register fid
+                    for ticker in code_list:
+                        if opt_type == 0:
+                            self.kiwoom.real_fid[ticker] = fid_list
+                        else:
+                            self.kiwoom.real_fid[ticker] = \
+                                list(set(self.kiwoom.real_fid[ticker] + fid_list))
+
+                    self.kiwoom.SetRealReg(screen, ";".join(code_list),
+                        ";".join(fid_list), str(opt_type))
                 elif func_name == "DisConnectRealData":
                     self.kiwoom.DisconnectRealData(screen)
 

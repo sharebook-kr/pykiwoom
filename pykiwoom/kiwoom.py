@@ -4,7 +4,6 @@ from PyQt5.QAxContainer import *
 import pythoncom
 import datetime
 from pykiwoom import parser
-from pykiwoom import real_type
 import pandas as pd
 
 
@@ -37,35 +36,7 @@ class Kiwoom:
         self._set_signals_slots()
 
         self.tr_output = {}
-        self.real_fid = {
-            "주식시세": [],
-            "주식체결": [],
-            "주식우선호가": [],
-            "주식호가잔량": [],
-            "주식시간외호가": [],
-            "주식당일거래원": [],
-            "ETF NAV": [],
-            "ELW 지표": [],
-            "ELW 이론가": [],
-            "주식예상체결": [],
-            "주식종목정보": [],
-            "선물옵션우선호가": [],
-            "선물시세": [],
-            "선물호가잔량": [],
-            "선물이론가": [],
-            "옵션시세": [],
-            "옵션호가잔량": [],
-            "옵션이론가": [],
-            "선물옵션우선호가": [],
-            "업종지수": [],
-            "업종등록": [],
-            "장시작시간": [],
-            "VI발동/해제": [],
-            "주문체결": [],
-            "파생잔고": [],
-            "잔고": [],
-            "종목프로그램매매": []
-        }
+        self.real_fid = {}
 
         if login:
             self.CommConnect()
@@ -233,18 +204,14 @@ class Kiwoom:
             rtype (str): 리얼타입 (주식시세, 주식체결, ...)
             data (str): 실시간 데이터 전문
         """
-        # get real queue index
-        index = real_type.real_index.get(rtype)
-        fid_list = self.real_fid[rtype]
-
         # get real data
-        real_data = {}
-        for fid in fid_list:
-            data = self.GetCommRealData(code, fid)
-            real_data[fid] = data
+        real_data = {"code": code}
+        for fid in self.real_fid[code]:
+            val = self.GetCommRealData(code, fid)
+            real_data[fid] = val
 
         # put real data to the queue
-        self.real_dqueues[index].put(real_data)
+        self.real_dqueues.put(real_data)
 
     def _set_signals_slots(self):
         self.ocx.OnReceiveTrData.connect(self.OnReceiveTrData)
