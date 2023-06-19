@@ -146,8 +146,8 @@ class KiwoomProxy:
                 # parameters
                     cond_name = cond_cmd['cond_name']
                     index     = cond_cmd['index']
+                    screen = cond_cmd['screen']
                     if func_name == "SendCondition":
-                        screen = cond_cmd['screen']
                         search = cond_cmd['search']
                         self.kiwoom.SendCondition(screen, cond_name, index, search, block=False)
                     elif func_name == "SendConditionStop":
