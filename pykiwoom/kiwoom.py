@@ -206,12 +206,13 @@ class Kiwoom:
         """
         # get real data
         real_data = {"code": code}
-        for fid in self.real_fid[code]:
-            val = self.GetCommRealData(code, fid)
-            real_data[fid] = val
+        if code in self.real_fid:
+            for fid in self.real_fid[code]:
+                val = self.GetCommRealData(code, fid)
+                real_data[fid] = val
 
-        # put real data to the queue
-        self.real_dqueues.put(real_data)
+            # put real data to the queue
+            self.real_dqueues.put(real_data)
 
     def _set_signals_slots(self):
         self.ocx.OnReceiveTrData.connect(self.OnReceiveTrData)
