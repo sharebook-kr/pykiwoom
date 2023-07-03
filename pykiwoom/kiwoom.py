@@ -108,10 +108,13 @@ class Kiwoom:
         data_list = []
         for row in range(rows):
             row_data = []
+            is_empty = True
             for item in items:
                 data = self.GetCommData(trcode, rqname, row, item)
                 row_data.append(data)
-            data_list.append(row_data)
+                is_empty = is_empty and data == ''
+            if is_empty is False:
+                data_list.append(row_data)
 
         # data to DataFrame
         df = pd.DataFrame(data=data_list, columns=items)
