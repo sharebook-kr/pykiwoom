@@ -121,8 +121,10 @@ class KiwoomProxy:
                         if opt_type == 0:
                             self.kiwoom.real_fid[ticker] = fid_list
                         else:
+                            prev_ticker = list(self.kiwoom.real_fid.keys())[0]
+                            prev_fid_list = self.kiwoom.real_fid[prev_ticker]
                             self.kiwoom.real_fid[ticker] = \
-                                list(set(self.kiwoom.real_fid[ticker] + fid_list))
+                                list(set(prev_fid_list + fid_list))
 
                     self.kiwoom.SetRealReg(screen, ";".join(code_list),
                         ";".join(fid_list), str(opt_type))
