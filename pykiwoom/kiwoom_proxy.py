@@ -96,7 +96,10 @@ class KiwoomProxy:
                 order_type  = order_cmd['order_type']
                 code        = order_cmd['code']
                 quantity    = order_cmd['quantity']
-                price       = order_cmd['price']
+                if order_cmd['hoga_gb'] == "03":
+                    price = ""
+                else:
+                    price = order_cmd['price']
                 hoga_gb     = order_cmd['hoga_gb']
                 order_no    = order_cmd['order_no']
 
@@ -118,7 +121,7 @@ class KiwoomProxy:
 
                     # register fid
                     for ticker in code_list:
-                        if opt_type == 0:
+                        if len(self.kiwoom.real_fid) == 0 or opt_type == 0:
                             self.kiwoom.real_fid[ticker] = fid_list
                         else:
                             prev_ticker = list(self.kiwoom.real_fid.keys())[0]
