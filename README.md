@@ -10,7 +10,7 @@ https://wikidocs.net/book/1173
 
 ## 로그인 
 
-```
+```python
 from pykiwoom.kiwoom import *
 
 kiwoom = Kiwoom()
@@ -24,7 +24,7 @@ kiwoom.CommConnect(block=True)
 
 ## 메서드
 
-```
+```python
 from pykiwoom.kiwoom import *
 
 if __name__ == "__main__":
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
 ## TR 
 
-```
+```python
 from pykiwoom.kiwoom import *
 
 if __name__ == "__main__":
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
 TR 연속 조회의 경우 이전 TR 데이터를 가져간 후 다시 요청해야합니다. 
 
-```
+```python
 from pykiwoom.kiwoom import *
 
 if __name__ == "__main__":
